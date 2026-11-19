@@ -428,8 +428,12 @@ valid afterward.
 
 ### ERROR
 
-No valid target result exists because of action failure, timeout, invalid
+No valid SCons target result exists because of action failure, timeout, invalid
 declared output or bundle failure.
+
+Materialization is reported independently. If materialization fails after a
+BUILT/CACHE_RESTORED/CURRENT decision, the SCons outcome is preserved and the
+step's overall status becomes `materialization_error`.
 
 Detection uses explicit action records plus pre/post target state. Console text
 is never parsed.
@@ -449,8 +453,8 @@ Schema 1 contains:
 - `engine: scons`;
 - `engine_schema`;
 - item/step IDs;
-- status;
-- build outcome;
+- overall status;
+- SCons outcome;
 - materialization result;
 - action-executed flag;
 - duration/exit/timeout where applicable;
