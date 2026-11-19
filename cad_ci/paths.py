@@ -7,7 +7,7 @@ from pathlib import Path
 
 
 # Generated output must never become an input to its own fingerprint.
-IGNORED_PARTS = {".git", "build", "__pycache__"}
+IGNORED_PARTS = {".git", ".cache", "build", "__pycache__"}
 
 
 def matches(path: str, pattern: str) -> bool:
