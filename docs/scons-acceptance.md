@@ -301,7 +301,7 @@ Action creates:
 - empty directory `generated/empty/`.
 
 Expected:
-1. cold -> B, materialization M;
+1. cold -> B, materialization U (the successful action already wrote the output);
 2. identical -> C, materialization U;
 3. delete local `generated/` but keep target/state -> C, materialization M;
 4. tamper nested file -> C, materialization P;
