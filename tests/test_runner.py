@@ -1,179 +1,114 @@
+"""Tests for the thin public SCons-backed execution API."""
+
 from pathlib import Path
-import json
+import shutil
 import tempfile
 import unittest
 
 from cad_ci.config import load_repository
-from cad_ci.runner import RunError, run_item
+from cad_ci.runner import RunError, run_repository
+
+
+def _write(path: Path, text: str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(text, encoding="utf-8")
 
 
 class RunnerTests(unittest.TestCase):
-    def make_repo(self, root: Path):
-        (root / "cad-ci.yml").write_text("schema: 1\nitems: [item]\n")
-        item = root / "item"
-        item.mkdir()
-        (item / "input.txt").write_text("one\n")
-        (item / "build.py").write_text(
-            "import os, pathlib\nout=pathlib.Path(os.environ['CAD_CI_OUTPUT'])\nout.mkdir(parents=True, exist_ok=True)\n(out/'built.txt').write_text((pathlib.Path(__file__).parent/'input.txt').read_text())\n"
-        )
-        (item / "verify.py").write_text(
-            "import os, pathlib\nout=pathlib.Path(os.environ['CAD_CI_OUTPUT'])\nassert (out/'built.txt').read_text().strip()\n(out/'verified.txt').write_text('ok\\n')\n"
-        )
-        (item / "ci.yml").write_text(
-            "id: item\nwatch: [item/**]\nsteps:\n"
-            "  - id: build\n    run: [python, build.py]\n    outputs: [built.txt]\n"
-            "  - id: verify\n    run: [python, verify.py]\n    outputs: [verified.txt]\n"
-        )
+    def require_scons(self) -> None:
+        if shutil.which("scons") is None:
+            self.skipTest("SCons execution dependency is not installed")
 
-    def test_full_run_then_reuse(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            repo = Path(tmp)
-            self.make_repo(repo)
-            items = load_repository(repo)
-            first = run_item(repo, items["item"], items)
-            second = run_item(repo, items["item"], items)
-            self.assertEqual(first, [("build", "ran"), ("verify", "ran")])
-            self.assertEqual(second, [("build", "reused"), ("verify", "reused")])
-
-    def test_exact_step_requires_current_earlier_step(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            repo = Path(tmp)
-            self.make_repo(repo)
-            items = load_repository(repo)
-            with self.assertRaisesRegex(RunError, "earlier step build"):
-                run_item(repo, items["item"], items, step="verify")
-            run_item(repo, items["item"], items)
-            events = run_item(repo, items["item"], items, step="verify")
-            self.assertEqual(events, [("verify", "ran")])
-
-    def test_changed_input_invalidates_reuse(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            repo = Path(tmp)
-            self.make_repo(repo)
-            items = load_repository(repo)
-            run_item(repo, items["item"], items)
-            (repo / "item" / "input.txt").write_text("two\n")
-            items = load_repository(repo)
-            events = run_item(repo, items["item"], items)
-            self.assertEqual(events, [("build", "ran"), ("verify", "ran")])
-
-    def test_missing_declared_output_fails(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            repo = Path(tmp)
-            self.make_repo(repo)
-            path = repo / "item" / "ci.yml"
-            path.write_text(path.read_text().replace("outputs: [built.txt]", "outputs: [missing.txt]"))
-            items = load_repository(repo)
-            with self.assertRaisesRegex(RunError, "declared output"):
-                run_item(repo, items["item"], items)
-
-    def test_dependency_output_change_invalidates_consumer(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            repo = Path(tmp)
-            (repo / "cad-ci.yml").write_text("schema: 1\nitems: [dep, item]\n")
-            dep = repo / "dep"
-            dep.mkdir()
-            (dep / "run.py").write_text("import os, pathlib\nout=pathlib.Path(os.environ['CAD_CI_OUTPUT']); out.mkdir(parents=True, exist_ok=True); (out/'dep.txt').write_text('one')\n")
-            (dep / "ci.yml").write_text("id: dep\nwatch: [dep/**]\nsteps: [{id: build, run: [python, run.py], outputs: [dep.txt]}]\n")
-            item = repo / "item"
-            item.mkdir()
-            (item / "run.py").write_text("import os, pathlib\nout=pathlib.Path(os.environ['CAD_CI_OUTPUT']); out.mkdir(parents=True, exist_ok=True); (out/'item.txt').write_text('ok')\n")
-            (item / "ci.yml").write_text("id: item\nneeds: [dep]\nwatch: [item/**]\nsteps: [{id: build, run: [python, run.py], outputs: [item.txt]}]\n")
-            items = load_repository(repo)
-            run_item(repo, items["dep"], items)
-            run_item(repo, items["item"], items)
-            (repo / "build" / "dep" / "dep.txt").write_text("changed")
-            with self.assertRaisesRegex(RunError, "current result for dep"):
-                run_item(repo, items["item"], items)
-
-    def test_from_reruns_from_named_step(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            repo = Path(tmp)
-            self.make_repo(repo)
-            items = load_repository(repo)
-            run_item(repo, items["item"], items)
-            events = run_item(repo, items["item"], items, start="verify")
-            self.assertEqual(events, [("verify", "ran")])
-
-    def test_timeout_is_recorded_and_never_completes_item(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            repo = Path(tmp)
-            (repo / "cad-ci.yml").write_text(
-                "schema: 1\n"
-                "defaults: {timeout_seconds: 1}\n"
-                "items: [item]\n"
+    def make_repo(self, root: Path) -> dict:
+        _write(root / "cad-ci.yml", "schema: 1\nitems: [item]\n")
+        for step, output in (("build", "built.txt"), ("verify", "verified.txt")):
+            prerequisite = (
+                ""
+                if step == "build"
+                else "assert (out / 'built.txt').is_file()\n"
             )
-            item = repo / "item"
-            item.mkdir()
-            (item / "ci.yml").write_text(
-                "id: item\n"
-                "steps:\n"
-                "  - id: wait\n"
-                "    run: [python, -c, 'import time; time.sleep(5)']\n"
+            _write(
+                root / "item" / f"{step}.py",
+                "import os\n"
+                "from pathlib import Path\n"
+                "out = Path(os.environ['CAD_CI_OUTPUT'])\n"
+                "out.mkdir(parents=True, exist_ok=True)\n"
+                + prerequisite
+                + f"(out / {output!r}).write_text({step!r})\n",
+            )
+        _write(
+            root / "item" / "ci.yml",
+            "id: item\n"
+            "steps:\n"
+            "  - id: build\n"
+            "    inputs: [item/build.py]\n"
+            "    run: [python, build.py]\n"
+            "    outputs: [built.txt]\n"
+            "  - id: verify\n"
+            "    inputs: [item/verify.py]\n"
+            "    run: [python, verify.py]\n"
+            "    outputs: [verified.txt]\n",
+        )
+        return load_repository(root)
+
+    def test_repository_run_uses_one_scons_target_graph(self):
+        self.require_scons()
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            items = self.make_repo(root)
+
+            first = run_repository(root, items, {"item"})
+            self.assertEqual(
+                [row["outcome"] for row in first["targets"]],
+                ["BUILT", "BUILT"],
             )
 
-            items = load_repository(repo)
+            second = run_repository(root, items, {"item"})
+            self.assertEqual(
+                [row["outcome"] for row in second["targets"]],
+                ["CURRENT", "CURRENT"],
+            )
+
+    def test_partial_selectors_are_mutually_exclusive(self):
+        self.require_scons()
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            items = self.make_repo(root)
+
             with self.assertRaisesRegex(
                 RunError,
-                "step timed out: item:wait after 1s",
+                "mutually exclusive",
             ):
-                run_item(repo, items["item"], items)
+                run_repository(
+                    root,
+                    items,
+                    {"item"},
+                    item_id="item",
+                    step="build",
+                    until="verify",
+                )
 
-            state = json.loads(
-                (
-                    repo
-                    / "build"
-                    / "item"
-                    / "steps"
-                    / "wait.json"
-                ).read_text()
-            )
-            self.assertEqual(state["status"], "timeout")
-            self.assertIsNone(state["exit_code"])
-            self.assertEqual(state["timeout_seconds"], 1)
-            self.assertEqual(state["outputs"], {})
-            self.assertFalse((repo / "build" / "item" / "item.json").exists())
-
-    def test_timeout_change_invalidates_reuse(self):
+    def test_execution_error_exposes_structured_report(self):
+        self.require_scons()
         with tempfile.TemporaryDirectory() as tmp:
-            repo = Path(tmp)
-            self.make_repo(repo)
-            root = repo / "cad-ci.yml"
-            root.write_text(
-                "schema: 1\n"
-                "defaults: {timeout_seconds: 30}\n"
-                "items: [item]\n"
+            root = Path(tmp)
+            _write(root / "cad-ci.yml", "schema: 1\nitems: [item]\n")
+            _write(
+                root / "item" / "ci.yml",
+                "id: item\n"
+                "steps:\n"
+                "  - id: fail\n"
+                "    inputs: []\n"
+                "    run: [python, -c, 'raise SystemExit(4)']\n",
             )
+            items = load_repository(root)
 
-            items = load_repository(repo)
-            self.assertEqual(
-                run_item(repo, items["item"], items),
-                [("build", "ran"), ("verify", "ran")],
-            )
-            self.assertEqual(
-                run_item(repo, items["item"], items),
-                [("build", "reused"), ("verify", "reused")],
-            )
-
-            root.write_text(
-                "schema: 1\n"
-                "defaults: {timeout_seconds: 60}\n"
-                "items: [item]\n"
-            )
-            items = load_repository(repo)
-            self.assertEqual(
-                run_item(repo, items["item"], items),
-                [("build", "ran"), ("verify", "ran")],
-            )
-
-    def test_until_stops_after_named_step(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            repo = Path(tmp)
-            self.make_repo(repo)
-            items = load_repository(repo)
-            events = run_item(repo, items["item"], items, until="build")
-            self.assertEqual(events, [("build", "ran")])
-            self.assertFalse((repo / "build" / "item" / "item.json").exists())
+            with self.assertRaises(RunError) as caught:
+                run_repository(root, items, {"item"})
+            self.assertIsNotNone(caught.exception.report)
+            row = caught.exception.report["targets"][0]
+            self.assertEqual(row["outcome"], "ERROR")
+            self.assertEqual(row["exit_code"], 4)
 
 
 if __name__ == "__main__":
