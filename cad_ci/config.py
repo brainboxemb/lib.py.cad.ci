@@ -22,6 +22,8 @@ class ConfigError(ValueError):
 
 
 _ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
+_ENV_NAME = re.compile(r"^[A-Z_][A-Z0-9_]*$")
+_RESERVED_ENV_PREFIXES = ("GITHUB_", "RUNNER_", "ACTIONS_", "CAD_CI_")
 _GENERATED_ROOTS = {".git", ".cache", "build"}
 
 
@@ -47,6 +49,32 @@ def _strings(value: object, field: str, path: Path) -> tuple[str, ...]:
     if not isinstance(value, list) or not all(isinstance(x, str) for x in value):
         raise ConfigError(f"{field} must be a list of strings: {path}")
     return tuple(value)
+
+
+def _variables(value: object, path: Path) -> tuple[tuple[str, str], ...]:
+    """Read validated repository-wide command environment variables."""
+
+    if value is None:
+        return ()
+    if not isinstance(value, dict):
+        raise ConfigError(f"variables must be a mapping: {path}")
+
+    result: list[tuple[str, str]] = []
+    for name, variable_value in value.items():
+        if not isinstance(name, str) or not _ENV_NAME.fullmatch(name):
+            raise ConfigError(
+                "variable name must use uppercase letters, numbers or "
+                f"underscore: {path}: {name!r}"
+            )
+        if name.startswith(_RESERVED_ENV_PREFIXES):
+            raise ConfigError(f"reserved variable name: {path}: {name}")
+        if not isinstance(variable_value, str):
+            raise ConfigError(
+                f"variable value for {name} must be a string: {path}"
+            )
+        result.append((name, variable_value))
+
+    return tuple(sorted(result))
 
 
 def _repo_patterns(
@@ -190,6 +218,8 @@ def load_repository(repo: Path) -> dict[str, Item]:
     if root.get("schema") != 1:
         raise ConfigError(f"unsupported schema in {root_path}")
 
+    variables = _variables(root.get("variables"), root_path)
+
     defaults = root.get("defaults", {})
     if defaults is None:
         defaults = {}
@@ -298,6 +328,7 @@ def load_repository(repo: Path) -> dict[str, Item]:
             watch=watch,
             affected=affected,
             reuse=reuse,
+            variables=variables,
             steps=steps,
             config_path=config_path,
             config_data=data,

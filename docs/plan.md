@@ -2,26 +2,29 @@
 
 This file is the current work source of truth for `lib.py.cad.ci`.
 
-It contains a point-in-time assessment of every open repository issue.
 Requirements and permanent product behavior live in the normal documentation;
 issues contain detail and history.
 
-## Current work
+## Current goal
 
-### #31 — Make docs/plan.md the repository work source of truth
+Complete #35: allow root `cad-ci.yml` to define validated repository variables
+that are injected into every configured consumer command and participate in
+SCons rebuild decisions.
 
-Status: in progress.
+## Execution order
 
-Required result:
+1. Define the variable contract in requirements/design and the SCons documents.
+2. Implement root variable loading, validation, command injection and target
+   signature participation.
+3. Prove the behavior with configuration tests and real-SCons execution tests.
+4. Release 0.5.0 after repository CI is green.
+5. Then update `tool.cad.ci` through its own #47 and prove the exact released
+   stack in `tool.cad.ci.test` before Forge uses it.
 
-- `docs/plan.md` remains the single current-work overview;
-- every open issue is represented here with its current status;
-- completed work is removed from the current-work section;
-- before starting repository work, compare this plan with the open issue list;
-- if the open issue list and plan disagree, update the plan first.
+## Open issue assessment — 2026-11-19
 
-## Open issue assessment
+| Issue | Status | Assessment |
+| --- | --- | --- |
+| #35 Inject repository variables from cad-ci.yml into every CAD-CI command | now | Active 0.5.0 change. Complete contract, implementation, tests and release before closing. |
 
-- #31 — in progress; this change establishes the repository rule above.
-
-No other open issues exist at this point in time.
+No other open repository issues exist at this point in time.

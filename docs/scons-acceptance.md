@@ -72,6 +72,32 @@ either target.
 Changing `strategy.reuse` is execution-significant and invalidates the affected
 item's target policy.
 
+## Case 2A - repository variables
+
+Root configuration contains:
+
+~~~yaml
+variables:
+  MODEL_MODE: "first"
+~~~
+
+The build command writes `MODEL_MODE` to its declared output.
+
+Expected sequence:
+
+| Run | Change | build |
+| --- | --- | --- |
+| 1 | cold, inherited MODEL_MODE=caller | B, output is `first` |
+| 2 | identical | C |
+| 3 | root variable changes to `second` | B, output is `second` |
+| 4 | identical | C |
+
+This proves both required properties: repository configuration overrides an
+inherited value, and the mapping participates in the SCons target signature.
+
+Invalid variable names, reserved prefixes and non-string values fail during
+configuration loading before SCons starts.
+
 ## Case 3 - resolved input membership
 
 Build step input pattern:
