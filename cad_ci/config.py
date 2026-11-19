@@ -1,13 +1,14 @@
-"""Read and validate the CI files owned by a consumer repository.
+"""Read and validate CI configuration owned by a consumer repository.
 
-The root `cad-ci.yml` only discovers item folders. Each item folder owns a
-`ci.yml` that describes its dependencies, watched inputs and ordered steps.
-This keeps domain behaviour beside the code or model that owns it.
+The root cad-ci.yml owns repository-wide defaults and item discovery. Each
+item folder owns ci.yml with Git-selection paths, dependencies and ordered
+steps. Step inputs are build dependencies; item watch paths are only coarse
+Git-selection inputs.
 """
 
 from __future__ import annotations
 
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 import re
 from typing import Any
 
@@ -21,6 +22,7 @@ class ConfigError(ValueError):
 
 
 _ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
+_GENERATED_ROOTS = {".git", ".cache", "build"}
 
 
 def _load_yaml(path: Path) -> dict[str, Any]:
@@ -47,6 +49,35 @@ def _strings(value: object, field: str, path: Path) -> tuple[str, ...]:
     return tuple(value)
 
 
+def _repo_patterns(
+    value: object,
+    field: str,
+    path: Path,
+    *,
+    optional: bool = False,
+) -> tuple[str, ...] | None:
+    """Read safe repository-relative patterns used by watch/step inputs."""
+
+    if value is None and optional:
+        return None
+    patterns = _strings(value, field, path)
+    normalized: list[str] = []
+    for raw in patterns:
+        pattern = raw.replace("\\", "/")
+        parsed = PurePosixPath(pattern)
+        if (
+            not pattern
+            or parsed.is_absolute()
+            or ".." in parsed.parts
+            or (parsed.parts and parsed.parts[0] in _GENERATED_ROOTS)
+        ):
+            raise ConfigError(
+                f"{field} must stay inside source paths: {path}: {raw}"
+            )
+        normalized.append(pattern)
+    return tuple(normalized)
+
+
 def _timeout_seconds(
     value: object,
     field: str,
@@ -54,11 +85,7 @@ def _timeout_seconds(
     *,
     default: int | None = None,
 ) -> int | None:
-    """Read one optional positive timeout in seconds.
-
-    A missing value inherits the supplied default. Booleans are rejected
-    because YAML/Python otherwise treat them as integers.
-    """
+    """Read one optional positive timeout in seconds."""
 
     if value is None:
         return default
@@ -67,55 +94,102 @@ def _timeout_seconds(
     return value
 
 
+def _output_path(raw: str, path: Path, step_id: str) -> str:
+    """Normalize and validate one step-owned output path."""
+
+    value = raw.replace("\\", "/").strip("/")
+    parsed = PurePosixPath(value)
+    if not value or parsed.is_absolute() or ".." in parsed.parts:
+        raise ConfigError(
+            f"output must stay inside the item build directory: {path}:{step_id}"
+        )
+    if parsed.parts and parsed.parts[0] == ".cad-ci":
+        raise ConfigError(
+            f"output uses reserved .cad-ci namespace: {path}:{step_id}"
+        )
+    return parsed.as_posix()
+
+
 def _step(data: object, path: Path, default_timeout: int | None) -> Step:
-    """Validate one step and convert it to the runner's small Step object."""
+    """Validate one step and convert it to the shared Step object."""
 
     if not isinstance(data, dict):
         raise ConfigError(f"step must be a mapping: {path}")
+
     step_id = data.get("id")
     run = data.get("run")
     if not isinstance(step_id, str) or not _ID.fullmatch(step_id):
-        raise ConfigError(f"step id must use letters, numbers, dot, dash or underscore: {path}")
+        raise ConfigError(
+            "step id must use letters, numbers, dot, dash or underscore: "
+            f"{path}"
+        )
 
-    # A list is executed directly without a shell. A string is deliberately
-    # kept for consumer commands that need shell syntax such as pipes.
+    # A list executes directly. A string deliberately requests shell syntax.
     if isinstance(run, list):
         if not run or not all(isinstance(x, str) for x in run):
-            raise ConfigError(f"step run list must contain strings: {path}:{step_id}")
+            raise ConfigError(
+                f"step run list must contain strings: {path}:{step_id}"
+            )
         command: str | tuple[str, ...] = tuple(run)
     elif isinstance(run, str) and run:
         command = run
     else:
         raise ConfigError(f"step run is required: {path}:{step_id}")
 
-    outputs = _strings(data.get("outputs"), "outputs", path)
-    for output in outputs:
-        output_path = Path(output)
-        # Declared outputs are later hashed and reused. Letting a step declare
-        # ../ would make one item own files outside its build directory.
-        if output_path.is_absolute() or ".." in output_path.parts:
-            raise ConfigError(f"output must stay inside the item build directory: {path}:{step_id}")
+    outputs = tuple(
+        _output_path(output, path, step_id)
+        for output in _strings(data.get("outputs"), "outputs", path)
+    )
+    inputs = _repo_patterns(
+        data.get("inputs"),
+        "inputs",
+        path,
+        optional="inputs" not in data,
+    )
     timeout_seconds = _timeout_seconds(
         data.get("timeout_seconds"),
         "timeout_seconds",
         path,
         default=default_timeout,
     )
-    return Step(step_id, command, outputs, timeout_seconds)
+    return Step(
+        id=step_id,
+        run=command,
+        outputs=outputs,
+        timeout_seconds=timeout_seconds,
+        inputs=inputs,
+    )
+
+
+def _check_output_ownership(steps: tuple[Step, ...], path: Path) -> None:
+    """Reject duplicate or parent/child output ownership between steps."""
+
+    owned: list[tuple[str, PurePosixPath]] = []
+    for step in steps:
+        for output in step.outputs:
+            current = PurePosixPath(output)
+            for owner, existing in owned:
+                left = existing.parts
+                right = current.parts
+                common = min(len(left), len(right))
+                if left[:common] == right[:common]:
+                    raise ConfigError(
+                        "step outputs overlap: "
+                        f"{path}: {owner}:{existing.as_posix()} and "
+                        f"{step.id}:{current.as_posix()}"
+                    )
+            owned.append((step.id, current))
 
 
 def load_repository(repo: Path) -> dict[str, Item]:
-    """Discover and validate every configured CI item in `repo`.
-
-    Folder globs let a repository add qualification/model items without also
-    maintaining a second central item list.
-    """
+    """Discover and validate every configured CI item in repo."""
 
     repo = repo.resolve()
     root_path = repo / "cad-ci.yml"
     root = _load_yaml(root_path)
     if root.get("schema") != 1:
         raise ConfigError(f"unsupported schema in {root_path}")
+
     defaults = root.get("defaults", {})
     if defaults is None:
         defaults = {}
@@ -136,16 +210,22 @@ def load_repository(repo: Path) -> dict[str, Item]:
     for pattern in item_patterns:
         rel_pattern = Path(pattern)
         if rel_pattern.is_absolute() or ".." in rel_pattern.parts:
-            raise ConfigError(f"item path must stay inside the repository: {pattern}")
+            raise ConfigError(
+                f"item path must stay inside the repository: {pattern}"
+            )
 
         has_glob = any(char in pattern for char in "*?[")
         matches = sorted(repo.glob(pattern)) if has_glob else [repo / rel_pattern]
-        # A folder only becomes a CI item when it explicitly owns ci.yml.
-        matches = [path for path in matches if path.is_dir() and (path / "ci.yml").is_file()]
+        matches = [
+            candidate
+            for candidate in matches
+            if candidate.is_dir() and (candidate / "ci.yml").is_file()
+        ]
         if not matches:
             raise ConfigError(f"item pattern matches no CI folders: {pattern}")
-        for path in matches:
-            rel = path.relative_to(repo)
+
+        for candidate in matches:
+            rel = candidate.relative_to(repo)
             if rel not in seen_paths:
                 seen_paths.add(rel)
                 item_paths.append(rel)
@@ -158,12 +238,14 @@ def load_repository(repo: Path) -> dict[str, Item]:
 
         item_id = data.get("id", rel.as_posix())
         if not isinstance(item_id, str) or not _ID.fullmatch(item_id):
-            raise ConfigError(f"item id must use letters, numbers, dot, dash or underscore: {config_path}")
+            raise ConfigError(
+                "item id must use letters, numbers, dot, dash or underscore: "
+                f"{config_path}"
+            )
         if item_id in items:
             raise ConfigError(f"duplicate item id: {item_id}")
 
-        # kind is intentionally descriptive only. The generic runner must not
-        # gain hidden behaviour for names such as qualification or library-test.
+        # kind is descriptive metadata only.
         kind = data.get("kind", "item")
         if not isinstance(kind, str) or not kind:
             raise ConfigError(f"kind must be a string: {config_path}")
@@ -173,16 +255,32 @@ def load_repository(repo: Path) -> dict[str, Item]:
             strategy = {}
         if not isinstance(strategy, dict):
             raise ConfigError(f"strategy must be a mapping: {config_path}")
+
         affected = strategy.get("affected", "changed")
         if affected not in ("changed", "direct", "always"):
-            raise ConfigError(f"strategy.affected must be changed, direct or always: {config_path}")
+            raise ConfigError(
+                "strategy.affected must be changed, direct or always: "
+                f"{config_path}"
+            )
+
         reuse = strategy.get("reuse", True)
         if not isinstance(reuse, bool):
-            raise ConfigError(f"strategy.reuse must be true or false: {config_path}")
+            raise ConfigError(
+                f"strategy.reuse must be true or false: {config_path}"
+            )
+
+        # Watch paths select top-level items from a Git diff. They are not the
+        # fine-grained SCons dependency model; steps may declare inputs.
+        watch_value = data.get("watch")
+        watch = _repo_patterns(watch_value, "watch", config_path)
+        if not watch:
+            watch = (f"{rel.as_posix()}/**",)
 
         raw_steps = data.get("steps")
         if not isinstance(raw_steps, list) or not raw_steps:
-            raise ConfigError(f"steps must be a non-empty list: {config_path}")
+            raise ConfigError(
+                f"steps must be a non-empty list: {config_path}"
+            )
         steps = tuple(
             _step(value, config_path, default_timeout)
             for value in raw_steps
@@ -190,14 +288,7 @@ def load_repository(repo: Path) -> dict[str, Item]:
         step_ids = [step.id for step in steps]
         if len(step_ids) != len(set(step_ids)):
             raise ConfigError(f"duplicate step id in {config_path}")
-
-        # Without an explicit watch list the item owns its complete source
-        # folder. Shared inputs can be added explicitly by the consumer.
-        watch = _strings(data.get("watch"), "watch", config_path) or (f"{rel.as_posix()}/**",)
-        for pattern in watch:
-            watch_path = Path(pattern)
-            if watch_path.is_absolute() or ".." in watch_path.parts:
-                raise ConfigError(f"watch pattern must stay inside the repository: {config_path}")
+        _check_output_ownership(steps, config_path)
 
         items[item_id] = Item(
             id=item_id,
@@ -212,12 +303,13 @@ def load_repository(repo: Path) -> dict[str, Item]:
             config_data=data,
         )
 
-    # Resolve dependency names after every item is known. This catches typos
-    # before planning or execution starts.
     for item in items.values():
         unknown = sorted(set(item.needs) - set(items))
         if unknown:
-            raise ConfigError(f"{item.id} needs unknown item(s): {', '.join(unknown)}")
+            raise ConfigError(
+                f"{item.id} needs unknown item(s): {', '.join(unknown)}"
+            )
+
     _check_cycles(items)
     return items
 
