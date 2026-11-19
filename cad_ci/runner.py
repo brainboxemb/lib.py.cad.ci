@@ -159,7 +159,7 @@ def current_item_result(
     return previous_result
 
 
-def dependency_results(
+def validated_dependency_results(
     repo: Path,
     item: Item,
     items: dict[str, Item],
@@ -264,7 +264,7 @@ def run_item(
     state; an earlier partial run does not claim the item is complete.
     """
 
-    dependency_results = dependency_results(repo, item, items)
+    dependency_results = validated_dependency_results(repo, item, items)
     item_fingerprint = item_input_fingerprint(
         repo,
         item,
