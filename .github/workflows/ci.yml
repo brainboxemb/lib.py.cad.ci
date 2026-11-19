@@ -10,14 +10,9 @@ permissions:
 
 jobs:
   test:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-      - run: python -m pip install -e .
-      - run: python -m unittest discover -s tests -p "test_*.py" -v
+    uses: brainboxemb/tool.py.lib.ci/.github/workflows/reusable-ci.yml@414db795c757af5c4f9eaff7f6fd65f27870d7d1
+    with:
+      python_version: "3.12"
 
   release:
     needs: test

@@ -53,8 +53,9 @@ decides which requested/prerequisite step targets actually execute.
 
 ## Repository CI
 
-`lib.py.cad.ci` is itself a Python library. Its own build/test workflow will
-migrate to an exact `tool.py.lib.ci` release that passed `tool.py.lib.ci.test`.
+`lib.py.cad.ci` is itself a Python library. Its own build/test workflow uses
+`tool.py.lib.ci` 0.1.1 at exact commit
+`414db795c757af5c4f9eaff7f6fd65f27870d7d1`, which passed `tool.py.lib.ci.test`.
 
 That repository-CI choice does not change the product architecture: SCons and
 the generic CAD-CI execution/build/publication mechanics remain responsibilities
