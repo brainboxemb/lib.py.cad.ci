@@ -129,7 +129,11 @@ Output paths:
 - cannot use the reserved `.cad-ci/` evidence namespace;
 - must not overlap output paths owned by another step of the same item.
 
-A successful step must produce every declared output.
+Immediately before a step action runs, CAD CI removes only that step's own
+declared output paths after all prerequisite output has been materialized. This
+prevents stale files from a previous invocation becoming part of the new result.
+
+A successful step must then recreate every declared output.
 
 A complete directory output includes its nested files and empty directories.
 
