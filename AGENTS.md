@@ -32,8 +32,9 @@ Rules:
 
 This repository is itself a Python library.
 
-Its own package CI should use the generic `tool.py.lib.ci` stack once an exact
-release has passed `tool.py.lib.ci.test`.
+Its own package CI uses `tool.py.lib.ci` 0.1.2 at exact commit
+`9045367540102ba2208c517e45a52ddad4bb60ea`, after that revision passed
+`tool.py.lib.ci.test`.
 
 Do not confuse that repository-CI dependency with the product architecture:
 SCons and CAD-CI behavior remain valid responsibilities of `lib.py.cad.ci`.
