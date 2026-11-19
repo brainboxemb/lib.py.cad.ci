@@ -48,6 +48,51 @@ class ConfigTests(unittest.TestCase):
             items = load_repository(repo)
             self.assertEqual(items["summary"].affected, "direct")
 
+    def test_root_timeout_and_step_override(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp)
+            (repo / "cad-ci.yml").write_text(
+                "schema: 1\n"
+                "defaults: {timeout_seconds: 30}\n"
+                "items: [a]\n"
+            )
+            folder = repo / "a"
+            folder.mkdir()
+            (folder / "ci.yml").write_text(
+                "id: a\n"
+                "steps:\n"
+                "  - id: default\n"
+                "    run: [python, -c, 'print(1)']\n"
+                "  - id: override\n"
+                "    timeout_seconds: 5\n"
+                "    run: [python, -c, 'print(2)']\n"
+            )
+
+            item = load_repository(repo)["a"]
+            self.assertEqual(item.steps[0].timeout_seconds, 30)
+            self.assertEqual(item.steps[1].timeout_seconds, 5)
+
+    def test_rejects_invalid_timeout(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp)
+            (repo / "cad-ci.yml").write_text(
+                "schema: 1\n"
+                "defaults: {timeout_seconds: 0}\n"
+                "items: [a]\n"
+            )
+            folder = repo / "a"
+            folder.mkdir()
+            (folder / "ci.yml").write_text(
+                "id: a\n"
+                "steps: [{id: test, run: [python, -c, 'print(1)']}]\n"
+            )
+
+            with self.assertRaisesRegex(
+                ConfigError,
+                "defaults.timeout_seconds must be a positive integer",
+            ):
+                load_repository(repo)
+
     def test_rejects_dependency_cycle(self):
         with tempfile.TemporaryDirectory() as tmp:
             repo = Path(tmp)
