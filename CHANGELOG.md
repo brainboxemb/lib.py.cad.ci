@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.5.0
+
+- add validated repository-wide `variables` in root `cad-ci.yml`;
+- inject those values into every consumer command while protecting CAD-CI-owned environment names;
+- include repository variables in each SCons target signature so value changes rebuild affected targets.
+
+
 ## 0.4.0
 
 - rename public SCons output evidence from `materialization` to `output_state`;
