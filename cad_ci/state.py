@@ -118,6 +118,7 @@ def step_input_fingerprint(
                 "id": step.id,
                 "run": step.run,
                 "outputs": step.outputs,
+                "timeout_seconds": step.timeout_seconds,
             },
             "previous_result": previous_result,
         }
