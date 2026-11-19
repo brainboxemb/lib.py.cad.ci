@@ -187,8 +187,13 @@ def _run_command(
     repo: Path,
     item: Item,
     step: Step,
-) -> tuple[int, float]:
-    """Run one configured command from its item folder with CAD_CI_* paths."""
+) -> tuple[int | None, float, bool]:
+    """Run one command and report return code, duration and timeout state.
+
+    `subprocess.run` terminates the child when its configured timeout expires.
+    A timeout has no meaningful process exit code, so the first tuple value is
+    None in that case.
+    """
 
     output_dir = item_output_dir(repo, item)
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -203,22 +208,27 @@ def _run_command(
     )
 
     started = time.monotonic()
-    if isinstance(step.run, tuple):
-        completed = subprocess.run(
-            step.run,
-            cwd=repo / item.path,
-            env=env,
-            check=False,
-        )
-    else:
-        completed = subprocess.run(
-            step.run,
-            cwd=repo / item.path,
-            env=env,
-            shell=True,
-            check=False,
-        )
-    return completed.returncode, time.monotonic() - started
+    try:
+        if isinstance(step.run, tuple):
+            completed = subprocess.run(
+                step.run,
+                cwd=repo / item.path,
+                env=env,
+                check=False,
+                timeout=step.timeout_seconds,
+            )
+        else:
+            completed = subprocess.run(
+                step.run,
+                cwd=repo / item.path,
+                env=env,
+                shell=True,
+                check=False,
+                timeout=step.timeout_seconds,
+            )
+    except subprocess.TimeoutExpired:
+        return None, time.monotonic() - started, True
+    return completed.returncode, time.monotonic() - started, False
 
 
 def _step_range(
@@ -311,12 +321,15 @@ def run_item(
             previous_result = valid_result
             continue
 
-        code, duration = _run_command(repo, item, current)
-        outputs = _output_hashes(repo, item, current)
-        status = "pass" if code == 0 and outputs is not None else "fail"
+        code, duration, timed_out = _run_command(repo, item, current)
+        outputs = None if timed_out else _output_hashes(repo, item, current)
+        if timed_out:
+            status = "timeout"
+        else:
+            status = "pass" if code == 0 and outputs is not None else "fail"
         result_fingerprint = (
             step_result_fingerprint(input_fingerprint, outputs)
-            if outputs is not None
+            if status == "pass" and outputs is not None
             else None
         )
         write_json(
@@ -328,10 +341,16 @@ def run_item(
                 "result_fingerprint": result_fingerprint,
                 "duration_seconds": round(duration, 3),
                 "exit_code": code,
+                "timeout_seconds": current.timeout_seconds,
                 "outputs": outputs or {},
             },
         )
 
+        if status == "timeout":
+            raise RunError(
+                f"step timed out: {item.id}:{current.id} "
+                f"after {current.timeout_seconds}s"
+            )
         if status != "pass":
             missing = (
                 ""
