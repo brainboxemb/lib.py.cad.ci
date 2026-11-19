@@ -32,8 +32,8 @@ Rules:
 
 This repository is itself a Python library.
 
-Its own package CI uses `tool.py.lib.ci` 0.1.1 at exact commit
-`414db795c757af5c4f9eaff7f6fd65f27870d7d1`, after that revision passed
+Its own package CI uses `tool.py.lib.ci` 0.1.2 at exact commit
+`9045367540102ba2208c517e45a52ddad4bb60ea`, after that revision passed
 `tool.py.lib.ci.test`.
 
 Do not confuse that repository-CI dependency with the product architecture:
