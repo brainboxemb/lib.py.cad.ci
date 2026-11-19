@@ -20,7 +20,7 @@ class PlannerTests(unittest.TestCase):
             folder.mkdir(parents=True)
             (folder / "ci.yml").write_text(config)
 
-    def test_one_qualification_change_does_not_select_sibling(self):
+    def test_one_case_change_does_not_select_sibling(self):
         with tempfile.TemporaryDirectory() as tmp:
             repo = Path(tmp)
             self.make_repo(repo)
