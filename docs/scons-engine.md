@@ -1,64 +1,52 @@
-# SCons execution engine
+# SCons execution engine design
 
-`lib.py.cad.ci` uses SCons for dependency, signature, incremental-build and
-cache decisions. The public CAD CI configuration stays `cad-ci.yml` plus one
-`ci.yml` per item.
+This document is the normative technical design for the execution part of
+`lib.py.cad.ci`.
 
-This follows the proven pattern already used by `tool.scad-project`: the tool
-owns the target model and writes a small manifest; a small SCons driver turns
-that manifest into SCons targets; SCons decides whether each target must run.
+`docs/requirements.md` defines observable product behaviour.
+`docs/scons-acceptance.md` defines the exact expected run sequences that must
+pass before the engine is released.
 
-## Responsibilities
+The design follows the proven architecture in `tool.scad-project`: a
+tool-owned manifest, a small SCons driver, SCons as the single rebuild/cache
+engine, and structured post-run evidence.
 
-### Keep in lib.py.cad.ci
+## 1. Scope
 
-- load and validate `cad-ci.yml` and item `ci.yml`;
-- translate item/step configuration to a SCons manifest;
-- coarse Git changed-file selection used for PR scope and publication;
-- expose dependency output paths to consumer commands;
-- collect structured target outcomes;
-- prepare and resolve `build/main` and `build/pr/<number>`;
-- install stable and preview Pages output;
-- publish generated branches safely;
-- Git source-freshness checks and generated-branch retry.
+SCons owns only local execution/incrementality.
 
-### SCons owns
-
-- dependency ordering for execution;
+SCons owns:
+- prerequisite graph;
 - target signatures;
-- action/config signature changes;
-- deciding whether a target is current;
-- rebuilding dirty prerequisites;
-- persistent build state;
-- CacheDir lookup and restore;
-- target-level incremental execution.
+- dirty/current decisions;
+- action/spec changes;
+- persistent local state;
+- CacheDir lookup/restore;
+- execution ordering.
 
-The library must not maintain a second competing fingerprint/reuse engine.
+`lib.py.cad.ci` owns:
+- YAML loading/validation;
+- coarse Git changed-file selection;
+- conversion from CI config to SCons manifest;
+- consumer command wrapper;
+- timeout handling;
+- output packaging/materialization;
+- structured evidence;
+- durable build store;
+- Pages;
+- generated branch publication;
+- source freshness;
+- external-resource handling.
 
-### Remove from the custom runner
+There is no second generic fingerprint/reuse engine beside SCons.
 
-The current implementation in `runner.py` and `state.py` contains behaviour
-that SCons already owns:
+## 2. Public configuration model
 
-- recursive current-result validation;
-- custom input fingerprints;
-- custom step fingerprints;
-- custom dependency-result fingerprints;
-- custom reusable-step decisions;
-- manual topological execution ordering;
-- manual "stale earlier step" handling.
+### Root cad-ci.yml
 
-These mechanisms are transitional and should disappear when the SCons adapter
-replaces them.
+Supported fields:
 
-## Configuration translation
-
-The consumer-facing format remains simple.
-
-Example:
-
-```yaml
-# cad-ci.yml
+~~~yaml
 schema: 1
 
 defaults:
@@ -67,186 +55,557 @@ defaults:
 items:
   - tool
   - examples/*
-```
+~~~
 
-```yaml
-# examples/simple_case/ci.yml
+`defaults.timeout_seconds` is optional.
+
+### Item ci.yml
+
+Supported fields:
+
+~~~yaml
 id: simple-case
+kind: example
+
 needs:
   - tool
+
 watch:
   - examples/simple_case/**
+  - shared/**
+
+strategy:
+  affected: changed
+  reuse: true
+
 steps:
   - id: build
+    inputs:
+      - examples/simple_case/build.py
+      - examples/simple_case/input/**
+      - shared/**
     run: [python, build.py]
-    outputs: [built.json]
+    outputs:
+      - generated
+
   - id: verify
+    inputs:
+      - examples/simple_case/verify.py
     run: [python, verify.py]
-    outputs: [verified.json]
-```
+    outputs:
+      - verify.json
+    timeout_seconds: 600
+~~~
 
-The adapter creates one SCons target per step. A later step depends on the
-previous step target. The first step of an item also depends on the final target
-of every item named in `needs`.
+Rules:
+- `kind` is descriptive only;
+- `watch` is for Git-level item selection;
+- `inputs` is for SCons rebuild dependencies;
+- omitted step `inputs` inherits the item's `watch`;
+- item `ci.yml` is represented by step-spec Values, not as a broad file
+  dependency;
+- `strategy.reuse: false` means explicitly execute every active step and do not
+  restore/store its target from CacheDir.
 
-The step specification itself is included as a SCons `Value` dependency. A
-change to command, outputs, timeout or other execution settings therefore
-invalidates the target without a separate CAD-CI fingerprint implementation.
+## 3. Internal target model
 
-Watched source files are supplied as SCons source dependencies. The resolved
-source list must also participate in the target specification so adding or
-removing a file matched by a glob invalidates the affected target.
+Every configured step maps to exactly one logical SCons target.
 
-## Output paths
+Stable logical key:
 
-Item output continues to mirror the source item path below the local
-`build/` candidate root. This keeps the existing durable build-store contract
-unchanged.
+~~~text
+<item-id>:<step-id>
+~~~
 
-The SCons adapter may add internal state below a dedicated cache/state path,
-for example:
+Example:
 
-```text
-.cache/cad-ci/scons/
-.cache/cad-ci/state/
-```
+~~~text
+tool:build
+tool:test
+simple-case:build
+simple-case:verify
+~~~
 
-That internal state is not durable build output and is never published to the
-`build` branch.
+The physical SCons target is one private output bundle per step:
 
-## Structured outcomes
+~~~text
+.cache/cad-ci/scons/targets/<item-path>/<step-id>.tar
+~~~
 
-Do not infer SCons decisions from console wording.
+The bundle target is internal state and never appears on the generated `build`
+branch.
 
-Follow the `tool.scad-project` result model and produce structured outcomes per
-step target:
+## 4. Dependency graph
 
-- `BUILT`
-- `CACHE_RESTORED`
-- `CURRENT`
-- `ERROR`
+Within one item:
 
-A timeout is an execution error with an explicit timeout reason in the action
-result. The configured timeout still belongs to CAD-CI config; SCons owns the
-target decision, while the CAD-CI action wrapper owns process execution and the
-timeout.
+~~~text
+step-1 -> step-2 -> step-3
+~~~
 
-The report should include at least:
+Step 2 depends on step 1; step 3 depends on step 2.
 
-- item id;
-- step id;
-- target output(s);
-- outcome;
-- whether the action executed;
-- duration when executed;
-- timeout setting;
-- source dependencies;
-- stable digest of the step specification.
+Between items:
 
-## Partial execution
+~~~text
+dependency-item:last-step -> consumer-item:first-step
+~~~
 
-Partial reruns map to normal SCons target selection.
+For a consumer with `needs: [library]` and steps `build, verify`:
 
-Requesting one step target asks SCons for that target. SCons evaluates its
-prerequisites and rebuilds only prerequisites that are actually dirty. Current
-prerequisites remain untouched.
+~~~text
+library:last
+      |
+      v
+consumer:build -> consumer:verify
+~~~
 
-This replaces the custom rule that a partial rerun must fail merely because an
-earlier custom state file is missing or stale.
+SCons owns traversal and ordering. CAD CI does not independently topologically
+execute items.
 
-The CLI can keep convenient selectors such as an item or a specific step, but
-they resolve to SCons target names rather than to a second execution engine.
+## 5. Step target signature
 
-## Coarse changed-file selection
+Each step target receives three classes of SCons dependency.
 
-Git changed-file selection and SCons incrementality have different purposes.
+### File sources
 
-CAD-CI may use changed paths to choose a small set of top-level item targets for
-a PR. Once those targets are selected, SCons alone decides which dependencies
-and steps actually execute.
+The resolved regular files matching that step's effective `inputs`.
 
-This is the same coarse-selection / fine-incrementality split already proven in
-`tool.scad-project`.
+The exact sorted relative-path list is also included in the step-spec Value.
+Adding/removing a matched file therefore changes the target even when remaining
+file contents are unchanged.
 
-## Dependency outputs
+### Previous/dependency target
 
-Consumer commands may continue to request outputs from declared direct
-dependencies. The runtime context must resolve those paths from the generated
-SCons/item manifest and the configured output layout.
+- previous step target for step N > 1;
+- final target of every direct `needs` item for step 1.
 
-It must not revalidate dependencies through the old custom runner state.
+### Step-spec Value
 
-If SCons successfully made the selected target, its prerequisite targets are
-the execution proof. Durable publication may additionally require a generated
-result manifest, but that manifest records evidence; it does not make rebuild
-decisions.
+Stable JSON containing only settings that affect that step:
 
-## Durable build publication
+~~~json
+{
+  "schema": 1,
+  "item_id": "simple-case",
+  "step_id": "verify",
+  "run": ["python", "verify.py"],
+  "outputs": ["verify.json"],
+  "timeout_seconds": 600,
+  "reuse": true,
+  "resolved_inputs": [
+    "examples/simple_case/verify.py"
+  ],
+  "engine_schema": 1
+}
+~~~
 
-SCons local state is separate from durable consumer build output.
+Not included:
+- descriptive `kind`;
+- Git-selection strategy;
+- unrelated step configuration;
+- absolute workspace paths;
+- source commit SHA.
 
-After SCons completes:
+Therefore changing verify command/timeout/outputs invalidates verify without
+invalidating an unrelated build target.
 
-- a main run prepares or updates `build/main`;
-- a PR run prepares a sparse `build/pr/<number>` overlay;
-- overlay resolution, cleanup and Pages publication continue to use the generic
-  build-store/publication modules.
+A stable engine-schema Value participates in every target signature. Changing
+execution or bundle semantics deliberately invalidates old target entries.
 
-Durable build manifests should record source provenance and the selected SCons
-result evidence. They should not recreate SCons' internal dependency/signature
-database.
+Do not hash the complete CAD-CI Python source tree into each target signature.
 
-## Directory outputs
+## 6. Source path rules
 
-Directory outputs need an explicit conformance decision before implementation.
+Step `inputs` and item `watch` use repository-relative patterns.
 
-The current CAD-CI runner hashes a complete directory tree. Do not assume that a
-SCons directory node provides equivalent content semantics.
+They may not:
+- be absolute;
+- contain `..`;
+- resolve into `.git/`, `.cache/` or `build/`.
 
-The real-SCons test suite must prove one supported representation, such as a
-generated manifest/stamp target that describes the directory contents. The
-chosen representation must detect:
+Input discovery:
+- returns regular files only;
+- rejects symlink inputs until a future schema explicitly supports them;
+- sorts relative paths lexically;
+- passes actual file nodes to SCons.
 
-- missing directory output;
-- changed nested file;
-- added nested file;
-- removed nested file;
-- CacheDir restore on a fresh workspace.
+The item's source `ci.yml` is excluded from inherited watch-based step inputs.
+Its effective settings are represented by the step-spec Value.
 
-No consumer migration starts until this behaviour is proven.
+## 7. Output ownership
 
-## Conformance tests
+Each step owns declared output paths below:
 
-Use real SCons, following the existing `tool.scad-project` conformance suite.
+~~~text
+build/<item-source-path>/
+~~~
 
-Required scenarios:
+The namespace:
 
-1. cold state/cache -> requested targets `BUILT`;
-2. identical second run -> targets `CURRENT`;
-3. one private input change -> only dependent target rebuilds;
-4. shared dependency change -> all dependent targets rebuild;
-5. command/config/timeout change -> affected target rebuilds;
-6. missing output with matching CacheDir -> `CACHE_RESTORED`;
-7. fresh workspace/state with populated CacheDir -> restore without builder;
-8. one requested later step -> only dirty prerequisites plus that step run;
-9. command failure -> `ERROR`;
-10. timeout -> `ERROR` with timeout reason;
-11. directory-output representation behaves as specified;
-12. separate cache/state locations do not leak into durable build output.
+~~~text
+build/<item-source-path>/.cad-ci/
+~~~
 
-After these library tests pass, `tool.cad.ci.test` proves the same released
-stack from the outside using its representative top-level cases.
+is reserved for generic evidence and cannot be consumer output.
 
-## Migration
+Within one item, output ownership must be unambiguous. Duplicate paths and
+parent/child overlap between different steps are invalid.
 
-Do not migrate Forge or CAD while this engine change is incomplete.
+A later step may read output from an earlier step, but it must not mutate an
+output owned by another step.
 
-The order is:
+## 8. Bundle format
 
-1. real-SCons conformance tests in `lib.py.cad.ci`;
-2. implement the SCons manifest/driver;
-3. remove the duplicate custom rebuild/reuse logic;
-4. release the library;
-5. pin and release `tool.cad.ci`;
-6. pin that exact release in `tool.cad.ci.test` and pass all cases;
-7. only then migrate Forge and CAD.
+The internal SCons target is a deterministic uncompressed tar bundle.
+
+This is chosen because:
+- CacheDir reliably handles one regular target file;
+- one step may own files and complete directories;
+- directory membership and empty directories must survive fresh-runner restore;
+- one target gives one cacheable result per step.
+
+Bundle contents:
+- every declared output at its configured relative path;
+- reserved internal manifest `__cad_ci_bundle__.json`.
+
+Bundle manifest schema 1:
+
+~~~json
+{
+  "schema": 1,
+  "outputs": {
+    "generated": {
+      "kind": "directory",
+      "sha256": "...",
+      "mode": 493
+    },
+    "result.json": {
+      "kind": "file",
+      "sha256": "...",
+      "mode": 420
+    }
+  }
+}
+~~~
+
+Directory digest includes relative directory entries, including empty
+directories, relative file paths and file content hashes.
+
+Archive normalization fixes uid/gid/user/group and mtime, uses lexical member
+order, preserves file/directory modes and rejects symlinks.
+
+A successful action exists only after its complete bundle has been written.
+
+## 9. Materialization model
+
+Materialization is not a rebuild decision.
+
+Before a consumer step action executes:
+1. SCons has made prerequisite bundle targets current;
+2. the CAD-CI action wrapper materializes required predecessor bundles in graph
+   order;
+3. direct dependency item bundles are materialized;
+4. the consumer command runs.
+
+For a same-item later step, preceding step bundles are materialized into the
+same item output root.
+
+For an item dependency, all dependency step bundles are materialized in step
+order so the dependency output root represents the complete item.
+
+After SCons finishes successfully, CAD CI materializes the active/requested item
+bundles in step order once more.
+
+Materialization result is separate from SCons outcome:
+- `UNCHANGED`: output already matched;
+- `RESTORED`: output was absent;
+- `REPAIRED`: output existed but differed;
+- `ERROR`: materialization failed.
+
+Materialization never changes BUILT/CACHE_RESTORED/CURRENT into a different
+SCons build decision.
+
+## 10. Command execution
+
+Consumer commands run with:
+
+~~~text
+cwd = <repo>/<item-path>
+~~~
+
+Environment:
+
+~~~text
+CAD_CI_REPO
+CAD_CI_ITEM
+CAD_CI_ITEM_PATH
+CAD_CI_OUTPUT
+CAD_CI_DEPENDENCIES_JSON
+~~~
+
+List commands execute directly without a shell. String commands use
+`shell=True` because the consumer explicitly requested shell syntax.
+
+Timeout wraps the consumer command only.
+
+Successful action requires exit 0 and every declared output to be valid.
+Non-zero exit, timeout, missing output or unsafe output is an error.
+
+A failed action leaves no successful new bundle target.
+
+## 11. Dependency context
+
+`CAD_CI_DEPENDENCIES_JSON` describes direct item dependencies only:
+
+~~~json
+{
+  "tool": {
+    "output_root": "/workspace/build/tool",
+    "outputs": ["dist", "metadata.json"],
+    "final_bundle": "/workspace/.cache/cad-ci/scons/targets/tool/test.tar",
+    "final_bundle_sha256": "..."
+  }
+}
+~~~
+
+`cad_ci.context.current_context()`:
+- loads the current item config;
+- confirms the dependency is declared in `needs`;
+- confirms the requested output is declared;
+- confirms the final bundle exists;
+- confirms materialized output matches bundle metadata;
+- exposes the path.
+
+It never asks whether the dependency should rebuild.
+
+## 12. Local directories
+
+Exact private layout:
+
+~~~text
+.cache/
+  cad-ci/
+    scons/
+      cache/
+      state/
+        .sconsign.dblite
+      targets/
+        <item-path>/
+          <step>.tar
+      run/
+        manifest.json
+        result.json
+        actions/
+          <item-path>/
+            <step>.json
+~~~
+
+Only `scons/cache/` is intended for cross-runner cache transport.
+
+Correctness must not depend on `scons/state/` surviving. Acceptance explicitly
+deletes state while keeping CacheDir.
+
+Nothing below `.cache/` is durable publication output.
+
+## 13. Structured SCons outcomes
+
+For every active target:
+
+### BUILT
+
+The consumer action executed successfully and a valid target bundle exists.
+
+### CACHE_RESTORED
+
+The action did not execute, the target bundle was absent before SCons, and a
+valid bundle exists afterward.
+
+### CURRENT
+
+The action did not execute, the target bundle existed before SCons, and remains
+valid afterward.
+
+### ERROR
+
+No valid target result exists because of action failure, timeout, invalid
+declared output or bundle failure.
+
+Detection uses explicit action records plus pre/post target state. Console text
+is never parsed.
+
+## 14. Public evidence
+
+After each run, CAD CI writes evidence below the item output root.
+
+Step evidence:
+
+~~~text
+build/<item>/.cad-ci/steps/<step>.json
+~~~
+
+Schema 1 contains:
+- `schema`;
+- `engine: scons`;
+- `engine_schema`;
+- item/step IDs;
+- status;
+- build outcome;
+- materialization result;
+- action-executed flag;
+- duration/exit/timeout where applicable;
+- target-spec digest;
+- bundle SHA-256;
+- declared output manifest.
+
+Complete item evidence:
+
+~~~text
+build/<item>/.cad-ci/item.json
+~~~
+
+Schema 1 contains:
+- schema/engine/engine schema;
+- item ID;
+- `status: pass`;
+- final step ID;
+- final target-spec digest;
+- final bundle SHA-256.
+
+Evidence never participates in SCons rebuild decisions.
+
+Any run that does not ensure the final item target removes stale complete-item
+evidence for that item.
+
+## 15. Partial command semantics
+
+### Normal run
+
+Request final step targets for selected items. SCons naturally traverses dirty
+prerequisites.
+
+### --until STEP
+
+Request STEP as top-level target. Nothing is forced.
+
+If STEP and prerequisites are current, no consumer action runs. If an earlier
+prerequisite is dirty, SCons rebuilds it and evaluates STEP.
+
+If STEP is not final, complete-item evidence is removed.
+
+### --step STEP
+
+Request STEP and mark only that target AlwaysBuild for this invocation.
+
+SCons makes prerequisites current first. Later steps are not requested.
+
+If STEP is not final, complete-item evidence is removed.
+
+### --from STEP
+
+Request the final item target.
+
+Mark STEP and every following step AlwaysBuild for this invocation. Earlier
+prerequisites use normal SCons decisions.
+
+This is the explicit operator command for "rerun from here".
+
+## 16. strategy.reuse
+
+`strategy.reuse: true` is default.
+
+Normal SCons signature and CacheDir behaviour applies.
+
+`strategy.reuse: false`:
+- every active step of that item is AlwaysBuild;
+- those step targets use NoCache;
+- dependency items retain their own policy.
+
+## 17. Git selection
+
+`affected_items()` remains because Git selection decides repository scope, not
+build freshness.
+
+Given changed paths:
+- root `cad-ci.yml` change selects all items;
+- item `ci.yml` change selects that item;
+- `watch` matches select that item;
+- selected dependency changes propagate to dependants unless dependant is
+  `affected: direct`;
+- `affected: always` items are always selected.
+
+Runtime does not use the old custom topological execution plan. SCons receives
+selected final targets and owns dependency ordering.
+
+`cad-ci plan` may explain selected items and dependency closure, but must not
+claim SCons dirty/current status without invoking SCons.
+
+## 18. Durable build store
+
+Generated `build` branch layout:
+
+~~~text
+main/<item-source-path>/...
+pr/<number>/<item-source-path>/...
+build.json
+~~~
+
+Item source path remains the storage key. Item ID is metadata.
+
+Candidate validation requires:
+
+~~~text
+<item>/.cad-ci/item.json
+~~~
+
+with supported schema, `status: pass`, expected item ID, current final step and
+non-empty final bundle digest.
+
+Build manifest item row schema 1:
+
+~~~json
+{
+  "source_commit": "...",
+  "item_id": "simple-case",
+  "engine": "scons",
+  "engine_schema": 1,
+  "final_step": "verify",
+  "final_target_spec_digest": "...",
+  "final_bundle_sha256": "..."
+}
+~~~
+
+SConsign, private target bundles and CacheDir are never published.
+
+## 19. Publication boundary
+
+SCons knows nothing about:
+- `build/main`;
+- PR overlays;
+- Pages;
+- Git branches;
+- GitHub;
+- GHCR.
+
+Publication consumes completed candidate output only.
+
+## 20. Implementation order
+
+Implementation starts only after this design and
+`docs/scons-acceptance.md` agree with `docs/requirements.md`.
+
+Then:
+1. adjust config model for inputs/output ownership/reserved namespace;
+2. make manifest/driver match this exact target model;
+3. make materialization match this exact design;
+4. write public evidence;
+5. switch dependency context to bundle-backed context;
+6. switch library execution API;
+7. delete obsolete custom rebuild/fingerprint code;
+8. release library;
+9. update and release tool;
+10. prove exact release in `tool.cad.ci.test`;
+11. only then migrate Forge/CAD.
+
+If implementation reveals an undefined semantic choice, stop and update the
+design before coding further.
