@@ -45,3 +45,15 @@ is in use here and the installed-wheel CI is green.
 
 If no other repository work is planned at that point, `docs/plan.md` may be
 removed.
+
+## Open issue assessment — 2026-11-19
+
+| Issue | Status | Assessment |
+| --- | --- | --- |
+| #31 Make docs/plan.md the repository work source of truth | now | Housekeeping; close after this plan/AGENTS update is merged. |
+| #27 Migrate this library's own CI to released tool.py.lib.ci | now | Active migration. PR #30 implements the move to the released Python-library CI path. Finish only after the exact tool release has passed its external test repository. |
+
+The product architecture does not change during #27: SCons and CAD-CI remain
+part of this library. Only this repository's own package build/test workflow
+moves to `tool.py.lib.ci`.
+
