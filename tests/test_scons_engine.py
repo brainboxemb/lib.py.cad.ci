@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import json
 import shutil
 import tempfile
 import unittest
@@ -510,32 +511,32 @@ out = Path(os.environ["CAD_CI_OUTPUT"]) / "generated"
             cold = self.run_selected(root, {"item"})
             row = _rows(cold)["item:build"]
             self.assertEqual(row["outcome"], "BUILT")
-            self.assertEqual(row["materialization"], "UNCHANGED")
+            self.assertEqual(row["output_state"], "UNCHANGED")
 
             current = self.run_selected(root, {"item"})
             row = _rows(current)["item:build"]
             self.assertEqual(row["outcome"], "CURRENT")
-            self.assertEqual(row["materialization"], "UNCHANGED")
+            self.assertEqual(row["output_state"], "UNCHANGED")
 
             generated = root / "build/item/generated"
             shutil.rmtree(generated)
             restored_local = self.run_selected(root, {"item"})
             row = _rows(restored_local)["item:build"]
             self.assertEqual(row["outcome"], "CURRENT")
-            self.assertEqual(row["materialization"], "RESTORED")
+            self.assertEqual(row["output_state"], "RESTORED")
 
             nested = generated / "nested/value.txt"
             nested.write_text("tampered\n", encoding="utf-8")
             repaired = self.run_selected(root, {"item"})
             row = _rows(repaired)["item:build"]
             self.assertEqual(row["outcome"], "CURRENT")
-            self.assertEqual(row["materialization"], "REPAIRED")
+            self.assertEqual(row["output_state"], "REPAIRED")
             self.assertEqual(nested.read_text(), "one\n")
 
             _write(generated / "extra.txt", "extra\n")
             repaired_extra = self.run_selected(root, {"item"})
             row = _rows(repaired_extra)["item:build"]
-            self.assertEqual(row["materialization"], "REPAIRED")
+            self.assertEqual(row["output_state"], "REPAIRED")
             self.assertFalse((generated / "extra.txt").exists())
 
             self.assertTrue((root / CACHE_ROOT).is_dir())
@@ -543,7 +544,7 @@ out = Path(os.environ["CAD_CI_OUTPUT"]) / "generated"
             fresh = self.run_selected(root, {"item"})
             row = _rows(fresh)["item:build"]
             self.assertEqual(row["outcome"], "CACHE_RESTORED")
-            self.assertEqual(row["materialization"], "RESTORED")
+            self.assertEqual(row["output_state"], "RESTORED")
             self.assertTrue((generated / "empty").is_dir())
 
     def test_reuse_false_executes_again(self):
@@ -599,6 +600,19 @@ out.mkdir(parents=True, exist_ok=True)
             self.assertTrue(
                 (root / "build/item/.cad-ci/item.json").is_file()
             )
+
+            report = json.loads((root / REPORT_PATH).read_text())
+            self.assertEqual(report["schema_version"], 2)
+            self.assertIn("output_state", report["targets"][0])
+            self.assertNotIn("materialization", report["targets"][0])
+
+            step = json.loads(
+                (root / "build/item/.cad-ci/steps/build.json").read_text()
+            )
+            self.assertEqual(step["schema"], 2)
+            self.assertIn("output_state", step)
+            self.assertNotIn("materialization", step)
+
             self.assertFalse(
                 (root / "build/item/.cache").exists()
             )

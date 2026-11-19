@@ -29,7 +29,7 @@ from .scons_bundle import (
 ENGINE_SCHEMA = 1
 MANIFEST_SCHEMA = 1
 REPORT_SCHEMA = "cad-ci.scons-results"
-REPORT_SCHEMA_VERSION = 1
+REPORT_SCHEMA_VERSION = 2
 OUTCOMES = ("BUILT", "CACHE_RESTORED", "CURRENT", "ERROR")
 
 CACHE_ROOT = Path(".cache/cad-ci/scons/cache")
@@ -502,7 +502,7 @@ def write_report(
                 else "fail"
             )
         elif materialization == "ERROR":
-            status = "materialization_error"
+            status = "output_restore_error"
         else:
             status = "pass"
 
@@ -529,7 +529,7 @@ def write_report(
                 "step": spec["step_id"],
                 "status": status,
                 "outcome": outcome,
-                "materialization": materialization,
+                "output_state": materialization,
                 "error": (
                     outcome_errors[key]
                     or materialized[key].get("error")
@@ -615,14 +615,14 @@ def write_public_evidence(
         _write_json(
             evidence,
             {
-                "schema": 1,
+                "schema": 2,
                 "engine": "scons",
                 "engine_schema": ENGINE_SCHEMA,
                 "item": row["item"],
                 "step": row["step"],
                 "status": row["status"],
                 "outcome": row["outcome"],
-                "materialization": row["materialization"],
+                "output_state": row["output_state"],
                 "error": row["error"],
                 "action_executed": row["action_executed"],
                 "duration_seconds": row["duration_seconds"],
@@ -683,7 +683,7 @@ def print_summary(report: dict[str, Any]) -> None:
     for target in report["targets"]:
         print(
             f"  {target['outcome'].lower()}: {target['key']} "
-            f"materialization={target['materialization'].lower()}"
+            f"output={target['output_state'].lower()}"
         )
 
 
