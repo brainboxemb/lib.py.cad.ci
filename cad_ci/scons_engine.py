@@ -640,7 +640,16 @@ def write_public_evidence(
             repo / "build" / item.path / ".cad-ci" / "item.json"
         )
         final = rows.get(final_key(item))
-        if final is None or final["status"] != "pass":
+        item_rows = [
+            row
+            for row in report["targets"]
+            if row["item"] == item_id
+        ]
+        if (
+            final is None
+            or final["status"] != "pass"
+            or any(row["status"] != "pass" for row in item_rows)
+        ):
             item_evidence.unlink(missing_ok=True)
             continue
 
