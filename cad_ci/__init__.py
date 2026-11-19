@@ -7,3 +7,7 @@ root only exposes the small data model that other tool modules share.
 from .model import Item, Step
 
 __all__ = ["Item", "Step"]
+
+from .context import ContextError, Dependency, ItemContext, current_context
+
+__all__ += ["ContextError", "Dependency", "ItemContext", "current_context"]
