@@ -1,58 +1,27 @@
 # Repository plan
 
-This file contains only current unfinished work for `lib.py.cad.ci`.
+This file is the current work source of truth for `lib.py.cad.ci`.
 
-Product requirements live in `docs/requirements.md`. Execution-engine design
-lives in `docs/scons-engine.md` and `docs/scons-acceptance.md`. Issues
-contain detailed discussion/history. This file is the single current execution
-plan.
+It contains a point-in-time assessment of every open repository issue.
+Requirements and permanent product behavior live in the normal documentation;
+issues contain detail and history.
 
-Completed sections are removed after their PR/release is finished.
+## Current work
 
-## 1. Migrate this library's own CI to tool.py.lib.ci — #27
+### #31 — Make docs/plan.md the repository work source of truth
 
-`lib.py.cad.ci` is a Python library. Its own package build/test workflow
-should use the generic Python-library CI stack, not maintain a separate
-hand-written package workflow.
+Status: in progress.
 
-Prerequisite:
+Required result:
 
-1. use released `tool.py.lib.ci` 0.1.2;
-2. pin exact commit `9045367540102ba2208c517e45a52ddad4bb60ea` in `tool.py.lib.ci.test`;
-3. pass the external test repository.
+- `docs/plan.md` remains the single current-work overview;
+- every open issue is represented here with its current status;
+- completed work is removed from the current-work section;
+- before starting repository work, compare this plan with the open issue list;
+- if the open issue list and plan disagree, update the plan first.
 
-The prerequisite is now complete. Current migration:
+## Open issue assessment
 
-- replace this repository's local package-test job with `tool.py.lib.ci` 0.1.2;
-- pin exact commit `9045367540102ba2208c517e45a52ddad4bb60ea`;
-- build exactly one `lib.py.cad.ci` wheel;
-- install that wheel and its dependencies in a clean environment;
-- run the complete library test suite against the installed wheel;
-- run release publication only after green main CI;
-- remove duplicate package build/test setup now owned by `tool.py.lib.ci`.
+- #31 — in progress; this change establishes the repository rule above.
 
-Important boundary:
-
-- this migration changes only this repository's **own CI**;
-- SCons remains part of the `lib.py.cad.ci` product;
-- CAD-CI planning, execution, reuse, evidence, durable build and publication
-  remain in this library;
-- `tool.cad.ci` remains the thin CAD-CI tool above this library.
-
-Remove this section and close #27 after the tested `tool.py.lib.ci` release
-is in use here and the installed-wheel CI is green.
-
-If no other repository work is planned at that point, `docs/plan.md` may be
-removed.
-
-## Open issue assessment — 2026-11-19
-
-| Issue | Status | Assessment |
-| --- | --- | --- |
-| #31 Make docs/plan.md the repository work source of truth | now | Housekeeping; close after this plan/AGENTS update is merged. |
-| #27 Migrate this library's own CI to released tool.py.lib.ci | now | Active migration. PR #30 implements the move to the released Python-library CI path. Finish only after the exact tool release has passed its external test repository. |
-
-The product architecture does not change during #27: SCons and CAD-CI remain
-part of this library. Only this repository's own package build/test workflow
-moves to `tool.py.lib.ci`.
-
+No other open issues exist at this point in time.
