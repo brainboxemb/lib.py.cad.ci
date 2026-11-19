@@ -236,7 +236,7 @@ source = Path(__file__).with_name("input.txt").read_text()
 from pathlib import Path
 out = Path(os.environ["CAD_CI_OUTPUT"])
 assert (out / "built.txt").read_text()
-(out / "verified.txt").write_text("ok\n")
+(out / "verified.txt").write_text("ok\\n")
 """,
             )
             _write(
