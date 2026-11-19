@@ -6,31 +6,38 @@
 
 ## Boundaries
 
-Keep this repository domain-neutral. Generic configuration, planning, runner,
-timeouts, state/reuse, durable build output, Pages and publication mechanics
-belong here. Forge stages, SolidCraft rules and CAD-domain checks do not.
+Keep this repository domain-neutral.
+
+Generic configuration, Git selection, SCons translation, execution wrappers,
+evidence, durable build output, Pages and publication mechanics belong here.
+Forge stages, SolidCraft rules and CAD-domain checks do not.
+
+SCons is the only generic rebuild/reuse engine. Do not add a parallel custom
+fingerprint, dependency execution or reuse engine.
 
 ## Development process
 
-1. Define the generic requirement before implementation.
-2. Implement generic behaviour here.
-3. Unit-test it here, including the expected failure classes.
-4. Release this library.
-5. Update `tool.cad.ci` to consume the exact released library.
-6. Release the tool after its CLI tests pass.
-7. Prove the complete released stack in `tool.cad.ci.test` with multiple
-   representative consumer cases.
-8. Only then update Forge or CAD.
+Before execution-engine code changes:
+1. define observable behaviour in `docs/requirements.md`;
+2. define exact technical semantics in `docs/scons-engine.md`;
+3. define expected run results in `docs/scons-acceptance.md`.
 
-If a real consumer migration reveals a missing generic feature, stop that
-migration and return the work to this library/tool stack. Do not develop the
-generic behaviour inside Forge or CAD.
+Only then implement and test the change.
+
+After library tests pass:
+1. release the library;
+2. update `tool.cad.ci` to the exact released library;
+3. test and release the tool;
+4. pin that exact tool in `tool.cad.ci.test`;
+5. pass all relevant black-box cases;
+6. only then update Forge or CAD.
+
+If implementation or a consumer migration exposes an undefined generic
+behaviour, stop and update the contract/design first.
 
 ## Change quality
 
-A real consumer migration should be configuration/domain wiring, not CI
-development. The generic stack must already cover planning, execution, reuse,
-timeouts, build output, Pages, publication, cleanup and defined error handling.
+Keep workflows orchestration-only. Put generic behaviour in this library.
 
-All Python modules and non-obvious logic need explanatory docstrings/comments.
-Workflows are orchestration only.
+All Python modules and non-obvious logic need concise explanatory
+docstrings/comments. Keep one logical change in one branch/PR.
