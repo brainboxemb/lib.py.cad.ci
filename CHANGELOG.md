@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.3.0
+
+- replace the custom fingerprint/reuse runner with SCons 4.11.1 as the single execution and incremental-build engine;
+- add step-level input patterns while keeping item watch paths for coarse Git selection;
+- add deterministic cumulative step bundles for file and complete-directory output, CacheDir restore and output repair;
+- define exact partial-run semantics for step, until and from execution;
+- expose bundle-backed dependency context and structured BUILT/CACHE_RESTORED/CURRENT/ERROR evidence;
+- publish complete item evidence under .cad-ci and validate durable main/PR build scopes against current item configuration;
+- remove the obsolete custom state/fingerprint engine.
+
+
 ## 0.2.0
 
 - add repository-default and per-step execution timeouts;
