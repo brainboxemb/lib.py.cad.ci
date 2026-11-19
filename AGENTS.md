@@ -15,6 +15,29 @@ Forge stages, SolidCraft rules and CAD-domain checks do not.
 SCons is the only generic rebuild/reuse engine. Do not add a parallel custom
 fingerprint, dependency execution or reuse engine.
 
+## Repository plan
+
+Current unfinished repository work lives in `docs/plan.md`.
+
+Rules:
+
+- keep one general repository plan;
+- the plan contains only unfinished work;
+- remove completed sections after merge/release;
+- permanent product behavior belongs in requirements/design documentation;
+- issues provide detail/history, but current execution order must be readable
+  from `docs/plan.md`.
+
+## Own CI boundary
+
+This repository is itself a Python library.
+
+Its own package CI should use the generic `tool.py.lib.ci` stack once an exact
+release has passed `tool.py.lib.ci.test`.
+
+Do not confuse that repository-CI dependency with the product architecture:
+SCons and CAD-CI behavior remain valid responsibilities of `lib.py.cad.ci`.
+
 ## Development process
 
 Before execution-engine code changes:

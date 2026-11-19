@@ -50,3 +50,14 @@ Only after that exact released stack is green may Forge or CAD migrate.
 
 These strategies choose top-level repository scope only. SCons separately
 decides which requested/prerequisite step targets actually execute.
+
+## Repository CI
+
+`lib.py.cad.ci` is itself a Python library. Its own build/test workflow will
+migrate to an exact black-box-accepted release of `tool.py.lib.ci`.
+
+That repository-CI choice does not change the product architecture: SCons and
+the generic CAD-CI execution/build/publication mechanics remain responsibilities
+of this library.
+
+Current unfinished repository work is tracked in `docs/plan.md`.
