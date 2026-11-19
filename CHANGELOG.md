@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.3
+
+- add authenticated read-only materialization of generated remote branches.
+
 ## 0.1.2
 
 - expose the current item output directory through ItemContext.output.
