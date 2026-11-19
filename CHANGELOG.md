@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.4.0
+
+- rename public SCons output evidence from `materialization` to `output_state`;
+- rename public restore failure status from `materialization_error` to `output_restore_error`;
+- print literal `output=unchanged|restored|repaired` target results instead of `materialization=...`;
+- bump the private run-report schema version to 2 and public step-evidence schema to 2;
+- keep bundle restoration terminology internal to the implementation.
+
+
 ## 0.3.0
 
 - replace the custom fingerprint/reuse runner with SCons 4.11.1 as the single execution and incremental-build engine;
