@@ -166,8 +166,12 @@ Each active step has one structured outcome:
   absent target bundle from CacheDir.
 - `CURRENT`: the action did not execute; the existing target bundle was
   already current.
-- `ERROR`: command failure, timeout, missing/invalid output, invalid bundle or
-  failed materialization prevented a valid result.
+- `ERROR`: the SCons target itself has no valid result because the command,
+  timeout, declared output or target bundle failed.
+
+Materialization is a separate observation and never rewrites a successful SCons
+decision. A step is usable only when its SCons outcome is not `ERROR` and its
+materialization is not `ERROR`.
 
 Materialization has a separate observation:
 - `UNCHANGED`: durable local output already matched the bundle;
@@ -193,8 +197,10 @@ Step evidence records at least:
 - schema version;
 - item and step IDs;
 - engine and engine schema;
-- outcome;
+- SCons outcome;
 - materialization result;
+- overall status (`pass`, `fail`, `timeout`, `output_error` or
+  `materialization_error`);
 - action-executed flag;
 - timeout/exit/duration where applicable;
 - target-spec digest;
