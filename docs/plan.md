@@ -7,24 +7,22 @@ issues contain detail and history.
 
 ## Current goal
 
-Complete #35: allow root `cad-ci.yml` to define validated repository variables
-that are injected into every configured consumer command and participate in
-SCons rebuild decisions.
+Complete #37 by bringing this plan in sync with the already merged and released
+0.5.0 repository state.
+
+No product, requirement, design or implementation change is part of this work.
 
 ## Execution order
 
-1. Define the variable contract in requirements/design and the SCons documents.
-2. Implement root variable loading, validation, command injection and target
-   signature participation.
-3. Prove the behavior with configuration tests and real-SCons execution tests.
-4. Release 0.5.0 after repository CI is green.
-5. Then update `tool.cad.ci` through its own #47 and prove the exact released
-   stack in `tool.cad.ci.test` before Forge uses it.
+1. Record the actual post-0.5.0 repository state.
+2. Confirm the complete open issue list.
+3. Merge the plan-only correction and close #37.
+4. Leave the repository with no active work if no new issue has appeared.
 
 ## Open issue assessment — 2026-11-19
 
 | Issue | Status | Assessment |
 | --- | --- | --- |
-| #35 Inject repository variables from cad-ci.yml into every CAD-CI command | now | Active 0.5.0 change. Complete contract, implementation, tests and release before closing. |
+| #37 Update repository plan after 0.5.0 release | now | Plan-only correction required after #35 / PR #36 was merged and released as v0.5.0. No product behavior changes. |
 
 No other open repository issues exist at this point in time.
