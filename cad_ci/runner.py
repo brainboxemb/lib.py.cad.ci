@@ -98,7 +98,7 @@ def _valid_step_result(
     return result
 
 
-def _current_item_result(
+def current_item_result(
     repo: Path,
     item: Item,
     items: dict[str, Item],
@@ -113,7 +113,7 @@ def _current_item_result(
     for dependency_id in item.needs:
         dependency = items[dependency_id]
         try:
-            dependency_results[dependency_id] = _current_item_result(
+            dependency_results[dependency_id] = current_item_result(
                 repo,
                 dependency,
                 items,
@@ -159,7 +159,7 @@ def _current_item_result(
     return previous_result
 
 
-def _dependency_results(
+def dependency_results(
     repo: Path,
     item: Item,
     items: dict[str, Item],
@@ -170,7 +170,7 @@ def _dependency_results(
     for dependency_id in item.needs:
         dependency = items[dependency_id]
         try:
-            result[dependency_id] = _current_item_result(
+            result[dependency_id] = current_item_result(
                 repo,
                 dependency,
                 items,
@@ -264,7 +264,7 @@ def run_item(
     state; an earlier partial run does not claim the item is complete.
     """
 
-    dependency_results = _dependency_results(repo, item, items)
+    dependency_results = dependency_results(repo, item, items)
     item_fingerprint = item_input_fingerprint(
         repo,
         item,
