@@ -1,4 +1,4 @@
-"""Publish generated build or Pages trees with normal Git pushes.
+"""Read and publish generated build or Pages branches with normal Git operations.
 
 Generated branches can have several independent writers. Each publish attempt
 starts from the current remote branch head, applies one scoped filesystem
@@ -322,3 +322,60 @@ def publish_pages_preview_cleanup(
             pull_request=pull_request,
         ),
     )
+
+
+def materialize_generated_branch(
+    *,
+    source_repo: Path,
+    branch: str,
+    out: Path,
+    remote: str = "origin",
+) -> str:
+    """Fetch one generated branch and copy its tree to `out`.
+
+    Checkout-local HTTP auth from actions/checkout is copied before fetch so
+    private repositories use the same credentials as publication. The returned
+    SHA is the exact remote branch commit that was materialized.
+    """
+
+    remote_url = _remote_url(source_repo, remote)
+    with tempfile.TemporaryDirectory(prefix="cad-ci-read-") as tmp:
+        work = Path(tmp) / "repo"
+        work.mkdir()
+        _git(work, "init", "--quiet")
+        _copy_auth_config(source_repo, work)
+        _git(work, "remote", "add", "origin", remote_url)
+
+        fetched = _git(
+            work,
+            "fetch",
+            "--quiet",
+            "--depth",
+            "1",
+            "origin",
+            f"refs/heads/{branch}",
+            check=False,
+        )
+        if fetched.returncode != 0:
+            message = (
+                fetched.stderr.strip()
+                or fetched.stdout.strip()
+                or f"could not fetch branch {branch}"
+            )
+            raise GitPublishError(message)
+
+        _git(work, "checkout", "--quiet", "--detach", "FETCH_HEAD")
+        commit = _git(work, "rev-parse", "HEAD").stdout.strip()
+
+        if out.exists():
+            if out.is_dir():
+                shutil.rmtree(out)
+            else:
+                out.unlink()
+        out.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copytree(
+            work,
+            out,
+            ignore=shutil.ignore_patterns(".git"),
+        )
+        return commit
