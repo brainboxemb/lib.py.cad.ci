@@ -116,6 +116,27 @@ Expected runs:
 Before app build executes, the library output must already be materialized and
 available through `current_context().dependency("library")`.
 
+## Case 4A - earlier dependency output propagates through final bundle
+
+Dependency has two steps:
+
+~~~text
+prepare -> finish
+~~~
+
+Consumer reads the prepare output. The finish step writes a constant file that
+does not depend on prepare output.
+
+Sequence:
+1. cold -> dependency prepare B, finish B, consumer B;
+2. none -> all C;
+3. change only prepare input -> dependency prepare B, finish B, consumer B.
+
+The finish step's own declared output may remain byte-identical, but its
+cumulative final bundle must change because it also contains the changed
+prepare output. This proves the final dependency bundle represents the complete
+item state.
+
 ## Case 5 - two independent consumers of one dependency
 
 Graph:
