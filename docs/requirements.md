@@ -90,7 +90,8 @@ Consumer commands still run from the item source folder and receive:
 
 A normal run requests the final target of every selected top-level item.
 
-Partial execution is explicit:
+Partial execution is explicit. `--step`, `--until` and `--from` are
+mutually exclusive.
 
 - `--step <id>`: force that exact step action once; SCons first makes its
   prerequisites current. Later steps are not requested.
