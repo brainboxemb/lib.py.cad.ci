@@ -61,4 +61,4 @@ That repository-CI choice does not change the product architecture: SCons and
 the generic CAD-CI execution/build/publication mechanics remain responsibilities
 of this library.
 
-Current unfinished repository work is tracked in `docs/plan.md`.
+`docs/plan.md` is the current work source of truth and includes the current status of every open repository issue.

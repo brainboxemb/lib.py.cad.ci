@@ -22,11 +22,15 @@ Current unfinished repository work lives in `docs/plan.md`.
 Rules:
 
 - keep one general repository plan;
-- the plan contains only unfinished work;
-- remove completed sections after merge/release;
+- treat `docs/plan.md` as the current work source of truth;
+- before starting work, compare the plan with the complete open issue list;
+- every open issue must have a point-in-time assessment in the plan;
+- if an open issue is missing from the plan, update the plan before implementation;
+- the current-work section contains only unfinished work;
+- remove completed work after merge/release;
 - permanent product behavior belongs in requirements/design documentation;
-- issues provide detail/history, but current execution order must be readable
-  from `docs/plan.md`.
+- issues provide detail and history, while the plan records current status and
+  execution order.
 
 ## Own CI boundary
 
