@@ -306,7 +306,11 @@ Before a consumer step action executes:
 2. the CAD-CI action wrapper materializes required predecessor bundles in graph
    order;
 3. direct dependency item bundles are materialized;
-4. the consumer command runs.
+4. the wrapper removes only the current step's declared output paths;
+5. the consumer command runs and must recreate its declared outputs.
+
+Cleaning only the current step's owned paths prevents stale nested files from a
+previous run while preserving outputs owned by prerequisite steps.
 
 For a same-item later step, preceding step bundles are materialized into the
 same item output root.
