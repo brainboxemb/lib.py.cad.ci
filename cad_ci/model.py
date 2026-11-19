@@ -13,11 +13,13 @@ class Step:
 
     `run` is either an argv tuple or a shell command. `outputs` lists files
     that must exist below the item's build directory after the step succeeds.
+    `timeout_seconds` is the effective repository default or step override.
     """
 
     id: str
     run: str | tuple[str, ...]
     outputs: tuple[str, ...] = ()
+    timeout_seconds: int | None = None
 
 
 @dataclass(frozen=True)
