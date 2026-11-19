@@ -599,6 +599,19 @@ out.mkdir(parents=True, exist_ok=True)
             self.assertTrue(
                 (root / "build/item/.cad-ci/item.json").is_file()
             )
+
+            report = json.loads((root / REPORT_PATH).read_text())
+            self.assertEqual(report["schema_version"], 2)
+            self.assertIn("output_state", report["targets"][0])
+            self.assertNotIn("materialization", report["targets"][0])
+
+            step = json.loads(
+                (root / "build/item/.cad-ci/steps/build.json").read_text()
+            )
+            self.assertEqual(step["schema"], 2)
+            self.assertIn("output_state", step)
+            self.assertNotIn("materialization", step)
+
             self.assertFalse(
                 (root / "build/item/.cache").exists()
             )
