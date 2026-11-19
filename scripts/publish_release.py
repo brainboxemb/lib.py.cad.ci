@@ -7,6 +7,7 @@ import json
 import os
 from pathlib import Path
 import re
+import subprocess
 import sys
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
@@ -31,6 +32,36 @@ def release_version(root: Path = ROOT) -> str:
     if re.search(rf"^## {re.escape(version)}(?:\s|$)", changelog, re.MULTILINE) is None:
         raise ValueError(f"CHANGELOG.md has no {version} release section")
     return version
+
+
+def version_changed(root: Path = ROOT) -> bool:
+    """Return whether VERSION changed in the current Git commit.
+
+    Ordinary main commits must not republish the current release. A repository
+    with no parent commit is treated as a version change so an initial release
+    remains possible.
+    """
+
+    parent = subprocess.run(
+        ["git", "rev-parse", "--verify", "HEAD^"],
+        cwd=root,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        check=False,
+    )
+    if parent.returncode != 0:
+        return True
+
+    changed = subprocess.run(
+        ["git", "diff", "--quiet", "HEAD^", "HEAD", "--", "VERSION"],
+        cwd=root,
+        check=False,
+    )
+    if changed.returncode == 0:
+        return False
+    if changed.returncode == 1:
+        return True
+    raise ValueError("could not determine whether VERSION changed")
 
 
 def _request(
@@ -59,7 +90,10 @@ def _request(
 
 
 def publish(repository: str, sha: str, token: str, root: Path = ROOT) -> str:
-    """Create the missing release for the exact tested main commit."""
+    """Publish only when VERSION changed in the exact tested main commit."""
+
+    if not version_changed(root):
+        return "VERSION unchanged; no release"
 
     version = release_version(root)
     tag = f"v{version}"
