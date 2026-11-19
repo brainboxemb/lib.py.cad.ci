@@ -223,29 +223,30 @@ def target_specs(
             _dependency_descriptor(items[dependency_id])
             for dependency_id in item.needs
         ]
+        cumulative_outputs: list[str] = []
 
         for index, configured_step in enumerate(item.steps):
             key = step_key(item, configured_step)
             resolved_inputs = _resolved_inputs(repo, item, configured_step)
+            cumulative_outputs.extend(configured_step.outputs)
 
             if index == 0:
                 dependencies = [
                     final_key(items[dependency_id])
                     for dependency_id in item.needs
                 ]
+                materialize_before = list(dependencies)
             else:
-                dependencies = [
-                    step_key(item, item.steps[index - 1])
-                ]
+                previous = step_key(item, item.steps[index - 1])
+                dependencies = [previous]
+                materialize_before = [previous]
+                # Direct dependency output must also be available to every step
+                # because current_context() is valid throughout the item flow.
+                materialize_before.extend(
+                    final_key(items[dependency_id])
+                    for dependency_id in item.needs
+                )
 
-            materialize_before: list[str] = [
-                step_key(item, predecessor)
-                for predecessor in item.steps[:index]
-            ]
-            for descriptor in direct_dependencies:
-                materialize_before.extend(descriptor["step_keys"])
-
-            # Preserve order while removing a possible duplicate key.
             materialize_before = list(dict.fromkeys(materialize_before))
 
             command: str | list[str]
@@ -265,6 +266,7 @@ def target_specs(
                 "run": command,
                 "shell": shell,
                 "outputs": list(configured_step.outputs),
+                "bundle_outputs": list(cumulative_outputs),
                 "timeout_seconds": configured_step.timeout_seconds,
                 "reuse": item.reuse,
                 "resolved_inputs": list(resolved_inputs),
@@ -282,6 +284,7 @@ def target_specs(
                     "run": command,
                     "shell": shell,
                     "outputs": list(configured_step.outputs),
+                    "bundle_outputs": list(cumulative_outputs),
                     "timeout_seconds": configured_step.timeout_seconds,
                     "reuse": item.reuse,
                     "sources": list(resolved_inputs),
@@ -438,7 +441,7 @@ def _materialize_active(
             materialization = materialize_bundle(
                 repo / spec["bundle"],
                 repo / "build" / Path(spec["item_path"]),
-                tuple(str(value) for value in spec["outputs"]),
+                tuple(str(value) for value in spec["bundle_outputs"]),
             )
             result[key] = {
                 "result": materialization,
@@ -511,9 +514,12 @@ def write_report(
         )
         output_manifest: dict[str, Any] = {}
         if bundle_digest is not None:
-            output_manifest = dict(
-                read_bundle_manifest(bundle).get("outputs", {})
-            )
+            bundle_outputs = read_bundle_manifest(bundle).get("outputs", {})
+            output_manifest = {
+                name: bundle_outputs[name]
+                for name in spec["outputs"]
+                if name in bundle_outputs
+            }
 
         rows.append(
             {
