@@ -17,14 +17,14 @@ hand-written package workflow.
 
 Prerequisite:
 
-1. use released `tool.py.lib.ci` 0.1.1;
-2. pin exact commit `414db795c757af5c4f9eaff7f6fd65f27870d7d1` in `tool.py.lib.ci.test`;
+1. use released `tool.py.lib.ci` 0.1.2;
+2. pin exact commit `9045367540102ba2208c517e45a52ddad4bb60ea` in `tool.py.lib.ci.test`;
 3. pass the external test repository.
 
 The prerequisite is now complete. Current migration:
 
-- replace this repository's local package-test job with `tool.py.lib.ci` 0.1.1;
-- pin exact commit `414db795c757af5c4f9eaff7f6fd65f27870d7d1`;
+- replace this repository's local package-test job with `tool.py.lib.ci` 0.1.2;
+- pin exact commit `9045367540102ba2208c517e45a52ddad4bb60ea`;
 - build exactly one `lib.py.cad.ci` wheel;
 - install that wheel and its dependencies in a clean environment;
 - run the complete library test suite against the installed wheel;
