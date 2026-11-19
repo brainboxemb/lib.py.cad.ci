@@ -1,9 +1,18 @@
+from importlib.util import module_from_spec, spec_from_file_location
 from pathlib import Path
 import subprocess
 import tempfile
 import unittest
 
-from scripts.publish_release import release_version, version_changed
+
+SCRIPT = Path(__file__).resolve().parents[1] / "scripts" / "publish_release.py"
+SPEC = spec_from_file_location("publish_release", SCRIPT)
+if SPEC is None or SPEC.loader is None:
+    raise RuntimeError(f"could not load {SCRIPT}")
+MODULE = module_from_spec(SPEC)
+SPEC.loader.exec_module(MODULE)
+release_version = MODULE.release_version
+version_changed = MODULE.version_changed
 
 
 class ReleaseTests(unittest.TestCase):
