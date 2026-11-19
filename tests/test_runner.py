@@ -95,6 +95,77 @@ class RunnerTests(unittest.TestCase):
             events = run_item(repo, items["item"], items, start="verify")
             self.assertEqual(events, [("verify", "ran")])
 
+    def test_timeout_is_recorded_and_never_completes_item(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp)
+            (repo / "cad-ci.yml").write_text(
+                "schema: 1\n"
+                "defaults: {timeout_seconds: 1}\n"
+                "items: [item]\n"
+            )
+            item = repo / "item"
+            item.mkdir()
+            (item / "ci.yml").write_text(
+                "id: item\n"
+                "steps:\n"
+                "  - id: wait\n"
+                "    run: [python, -c, 'import time; time.sleep(5)']\n"
+            )
+
+            items = load_repository(repo)
+            with self.assertRaisesRegex(
+                RunError,
+                "step timed out: item:wait after 1s",
+            ):
+                run_item(repo, items["item"], items)
+
+            state = json.loads(
+                (
+                    repo
+                    / "build"
+                    / "item"
+                    / "steps"
+                    / "wait.json"
+                ).read_text()
+            )
+            self.assertEqual(state["status"], "timeout")
+            self.assertIsNone(state["exit_code"])
+            self.assertEqual(state["timeout_seconds"], 1)
+            self.assertEqual(state["outputs"], {})
+            self.assertFalse((repo / "build" / "item" / "item.json").exists())
+
+    def test_timeout_change_invalidates_reuse(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp)
+            self.make_repo(repo)
+            root = repo / "cad-ci.yml"
+            root.write_text(
+                "schema: 1\n"
+                "defaults: {timeout_seconds: 30}\n"
+                "items: [item]\n"
+            )
+
+            items = load_repository(repo)
+            self.assertEqual(
+                run_item(repo, items["item"], items),
+                [("build", "ran"), ("verify", "ran")],
+            )
+            self.assertEqual(
+                run_item(repo, items["item"], items),
+                [("build", "reused"), ("verify", "reused")],
+            )
+
+            root.write_text(
+                "schema: 1\n"
+                "defaults: {timeout_seconds: 60}\n"
+                "items: [item]\n"
+            )
+            items = load_repository(repo)
+            self.assertEqual(
+                run_item(repo, items["item"], items),
+                [("build", "ran"), ("verify", "ran")],
+            )
+
     def test_until_stops_after_named_step(self):
         with tempfile.TemporaryDirectory() as tmp:
             repo = Path(tmp)
