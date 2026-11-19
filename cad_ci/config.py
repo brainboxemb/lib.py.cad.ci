@@ -47,7 +47,27 @@ def _strings(value: object, field: str, path: Path) -> tuple[str, ...]:
     return tuple(value)
 
 
-def _step(data: object, path: Path) -> Step:
+def _timeout_seconds(
+    value: object,
+    field: str,
+    path: Path,
+    *,
+    default: int | None = None,
+) -> int | None:
+    """Read one optional positive timeout in seconds.
+
+    A missing value inherits the supplied default. Booleans are rejected
+    because YAML/Python otherwise treat them as integers.
+    """
+
+    if value is None:
+        return default
+    if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
+        raise ConfigError(f"{field} must be a positive integer: {path}")
+    return value
+
+
+def _step(data: object, path: Path, default_timeout: int | None) -> Step:
     """Validate one step and convert it to the runner's small Step object."""
 
     if not isinstance(data, dict):
@@ -75,7 +95,13 @@ def _step(data: object, path: Path) -> Step:
         # ../ would make one item own files outside its build directory.
         if output_path.is_absolute() or ".." in output_path.parts:
             raise ConfigError(f"output must stay inside the item build directory: {path}:{step_id}")
-    return Step(step_id, command, outputs)
+    timeout_seconds = _timeout_seconds(
+        data.get("timeout_seconds"),
+        "timeout_seconds",
+        path,
+        default=default_timeout,
+    )
+    return Step(step_id, command, outputs, timeout_seconds)
 
 
 def load_repository(repo: Path) -> dict[str, Item]:
@@ -90,6 +116,17 @@ def load_repository(repo: Path) -> dict[str, Item]:
     root = _load_yaml(root_path)
     if root.get("schema") != 1:
         raise ConfigError(f"unsupported schema in {root_path}")
+    defaults = root.get("defaults", {})
+    if defaults is None:
+        defaults = {}
+    if not isinstance(defaults, dict):
+        raise ConfigError(f"defaults must be a mapping: {root_path}")
+    default_timeout = _timeout_seconds(
+        defaults.get("timeout_seconds"),
+        "defaults.timeout_seconds",
+        root_path,
+    )
+
     item_patterns = _strings(root.get("items"), "items", root_path)
     if not item_patterns:
         raise ConfigError(f"no items configured in {root_path}")
@@ -146,7 +183,10 @@ def load_repository(repo: Path) -> dict[str, Item]:
         raw_steps = data.get("steps")
         if not isinstance(raw_steps, list) or not raw_steps:
             raise ConfigError(f"steps must be a non-empty list: {config_path}")
-        steps = tuple(_step(value, config_path) for value in raw_steps)
+        steps = tuple(
+            _step(value, config_path, default_timeout)
+            for value in raw_steps
+        )
         step_ids = [step.id for step in steps]
         if len(step_ids) != len(set(step_ids)):
             raise ConfigError(f"duplicate step id in {config_path}")
