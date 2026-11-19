@@ -265,9 +265,18 @@ This is chosen because:
 - directory membership and empty directories must survive fresh-runner restore;
 - one target gives one cacheable result per step.
 
+Each step bundle represents the complete item state after that step.
+
 Bundle contents:
-- every declared output at its configured relative path;
-- reserved internal manifest `__cad_ci_bundle__.json`.
+- every output owned by the current step;
+- every output owned by earlier steps of the same item;
+- reserved internal manifest `.cad-ci/__bundle__.json`.
+
+For steps `prepare -> build -> verify`, the prepare bundle contains prepare
+outputs, the build bundle contains prepare + build outputs, and the verify
+bundle contains prepare + build + verify outputs. Therefore the final bundle is
+a complete item result and any earlier-step output change also changes the final
+dependency target.
 
 Bundle manifest schema 1:
 
@@ -312,11 +321,11 @@ Before a consumer step action executes:
 Cleaning only the current step's owned paths prevents stale nested files from a
 previous run while preserving outputs owned by prerequisite steps.
 
-For a same-item later step, preceding step bundles are materialized into the
-same item output root.
+For a same-item later step, the immediately preceding cumulative bundle is
+enough to restore every earlier output.
 
-For an item dependency, all dependency step bundles are materialized in step
-order so the dependency output root represents the complete item.
+For an item dependency, its final cumulative bundle restores the complete item
+output tree.
 
 After SCons finishes successfully, CAD CI materializes the active/requested item
 bundles in step order once more.
