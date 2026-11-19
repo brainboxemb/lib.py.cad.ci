@@ -184,6 +184,7 @@ assert (out / "build.json").read_text()
             self.run_selected(root, {"item"})
             self.run_selected(root, {"item"})
 
+            shutil.rmtree(root / CACHE_ROOT, ignore_errors=True)
             _write(root / "item" / "input" / "b.txt", "second\n")
             added = self.run_selected(root, {"item"})
             self.assertEqual(
@@ -191,6 +192,7 @@ assert (out / "build.json").read_text()
                 {"item:build": "BUILT", "item:verify": "BUILT"},
             )
 
+            shutil.rmtree(root / CACHE_ROOT, ignore_errors=True)
             (root / "item" / "input" / "b.txt").unlink()
             removed = self.run_selected(root, {"item"})
             self.assertEqual(
