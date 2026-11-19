@@ -19,7 +19,7 @@ Prerequisite:
 
 1. release `tool.py.lib.ci` 0.1.0;
 2. pin that exact release in `tool.py.lib.ci.test`;
-3. pass black-box acceptance there.
+3. pass the external test repository.
 
 Only after that accepted release exists:
 
@@ -29,7 +29,7 @@ Only after that accepted release exists:
 - build exactly one `lib.py.cad.ci` wheel;
 - install that wheel and its dependencies in a clean environment;
 - run the complete library test suite against the installed wheel;
-- keep release publication gated on green main CI;
+- run release publication only after green main CI;
 - remove duplicate package build/test setup now owned by `tool.py.lib.ci`.
 
 Important boundary:
@@ -40,7 +40,7 @@ Important boundary:
   remain in this library;
 - `tool.cad.ci` remains the thin CAD-CI tool above this library.
 
-Remove this section and close #27 after the accepted `tool.py.lib.ci` release
+Remove this section and close #27 after the tested `tool.py.lib.ci` release
 is in use here and the installed-wheel CI is green.
 
 If no other repository work is planned at that point, `docs/plan.md` may be
