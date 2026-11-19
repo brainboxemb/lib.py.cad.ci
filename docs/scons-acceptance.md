@@ -83,9 +83,14 @@ simple_case1/input/**
 Sequence:
 1. cold full run -> build B, verify B;
 2. identical -> build C, verify C;
-3. add a new matched file -> build B, verify B;
+3. clear CacheDir, then add a new matched file -> build B, verify B;
 4. identical -> build C, verify C;
-5. remove the matched file -> build B, verify B.
+5. clear CacheDir, then remove the matched file -> build B, verify B.
+
+CacheDir is deliberately cleared before the membership transitions because this
+case proves invalidation/action execution. Without clearing it, returning to an
+earlier exact signature may legitimately produce CACHE_RESTORED instead of
+BUILT; that behaviour is tested separately by the cache-restore cases.
 
 This proves glob membership is part of the target signature, not only contents
 of files that happened to exist during the previous run.
