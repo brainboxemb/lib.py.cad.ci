@@ -14,6 +14,7 @@ from cad_ci.git_publish import (
     publish_build_scope,
     publish_pages,
     publish_pages_preview_cleanup,
+    materialize_generated_branch,
 )
 from cad_ci.pages import Page, build_site
 
@@ -319,6 +320,52 @@ class GitPublishTests(unittest.TestCase):
                 "ok",
                 branch_file(remote, "gh-pages", "index.html"),
             )
+
+    def test_materializes_exact_generated_branch_tree(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source, remote = init_remote(root)
+
+            candidate = root / "candidate"
+            write_item(candidate, "qualification/a", "a")
+            main = root / "main-candidate"
+            prepare_main(
+                candidate_root=candidate,
+                out=main,
+                item_paths=["qualification/a"],
+                source_commit="main-1",
+            )
+            published = publish_build_scope(
+                source_repo=source,
+                candidate=main,
+                scope="main",
+                message="main",
+            )
+
+            out = root / "materialized"
+            fetched = materialize_generated_branch(
+                source_repo=source,
+                branch="build",
+                out=out,
+            )
+
+            self.assertEqual(fetched, published)
+            self.assertEqual(
+                (out / "main/qualification/a/result.txt").read_text(),
+                "a",
+            )
+            self.assertFalse((out / ".git").exists())
+
+    def test_missing_generated_branch_fails_clearly(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source, _ = init_remote(root)
+            with self.assertRaises(git_publish.GitPublishError):
+                materialize_generated_branch(
+                    source_repo=source,
+                    branch="missing",
+                    out=root / "out",
+                )
 
 
 if __name__ == "__main__":
