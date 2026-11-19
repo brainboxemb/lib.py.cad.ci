@@ -487,6 +487,9 @@ evidence for that item.
 
 ## 15. Partial command semantics
 
+`--step`, `--until` and `--from` are mutually exclusive. Combining them is
+a configuration/CLI error before SCons starts.
+
 ### Normal run
 
 Request final step targets for selected items. SCons naturally traverses dirty
