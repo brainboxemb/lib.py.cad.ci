@@ -726,7 +726,7 @@ def run_scons(
             "-Q",
             "-f",
             str(driver),
-            f"CAD_CI_MANIFEST={manifest}",
+            f"CAD_CI_MANIFEST={MANIFEST_PATH.as_posix()}",
         ],
         cwd=repo,
         text=True,
