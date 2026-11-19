@@ -502,7 +502,7 @@ def write_report(
                 else "fail"
             )
         elif materialization == "ERROR":
-            status = "materialization_error"
+            status = "output_restore_error"
         else:
             status = "pass"
 
@@ -529,7 +529,7 @@ def write_report(
                 "step": spec["step_id"],
                 "status": status,
                 "outcome": outcome,
-                "materialization": materialization,
+                "output_state": materialization,
                 "error": (
                     outcome_errors[key]
                     or materialized[key].get("error")
@@ -622,7 +622,7 @@ def write_public_evidence(
                 "step": row["step"],
                 "status": row["status"],
                 "outcome": row["outcome"],
-                "materialization": row["materialization"],
+                "output_state": row["output_state"],
                 "error": row["error"],
                 "action_executed": row["action_executed"],
                 "duration_seconds": row["duration_seconds"],
@@ -683,7 +683,7 @@ def print_summary(report: dict[str, Any]) -> None:
     for target in report["targets"]:
         print(
             f"  {target['outcome'].lower()}: {target['key']} "
-            f"materialization={target['materialization'].lower()}"
+            f"output={target['output_state'].lower()}"
         )
 
 
