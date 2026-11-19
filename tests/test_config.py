@@ -93,6 +93,127 @@ class ConfigTests(unittest.TestCase):
             ):
                 load_repository(repo)
 
+    def test_step_inputs_are_separate_from_watch(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp)
+            (repo / "cad-ci.yml").write_text(
+                "schema: 1\nitems: [a]\n",
+                encoding="utf-8",
+            )
+            folder = repo / "a"
+            folder.mkdir()
+            (folder / "ci.yml").write_text(
+                "id: a\n"
+                "watch: [a/**, shared/**]\n"
+                "steps:\n"
+                "  - id: build\n"
+                "    inputs: [a/build.py, shared/data/**]\n"
+                "    run: [python, build.py]\n"
+                "  - id: verify\n"
+                "    run: [python, verify.py]\n",
+                encoding="utf-8",
+            )
+
+            item = load_repository(repo)["a"]
+            self.assertEqual(
+                item.steps[0].inputs,
+                ("a/build.py", "shared/data/**"),
+            )
+            self.assertIsNone(item.steps[1].inputs)
+            self.assertEqual(item.watch, ("a/**", "shared/**"))
+
+    def test_rejects_generated_step_input(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp)
+            (repo / "cad-ci.yml").write_text(
+                "schema: 1\nitems: [a]\n",
+                encoding="utf-8",
+            )
+            folder = repo / "a"
+            folder.mkdir()
+            (folder / "ci.yml").write_text(
+                "id: a\n"
+                "steps:\n"
+                "  - id: build\n"
+                "    inputs: [build/generated.txt]\n"
+                "    run: [python, -c, 'print(1)']\n",
+                encoding="utf-8",
+            )
+            with self.assertRaisesRegex(
+                ConfigError,
+                "inputs must stay inside source paths",
+            ):
+                load_repository(repo)
+
+    def test_rejects_reserved_evidence_output(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp)
+            (repo / "cad-ci.yml").write_text(
+                "schema: 1\nitems: [a]\n",
+                encoding="utf-8",
+            )
+            folder = repo / "a"
+            folder.mkdir()
+            (folder / "ci.yml").write_text(
+                "id: a\n"
+                "steps:\n"
+                "  - id: build\n"
+                "    run: [python, -c, 'print(1)']\n"
+                "    outputs: [.cad-ci/result.json]\n",
+                encoding="utf-8",
+            )
+            with self.assertRaisesRegex(
+                ConfigError,
+                "reserved .cad-ci namespace",
+            ):
+                load_repository(repo)
+
+    def test_rejects_output_owned_by_two_steps(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp)
+            (repo / "cad-ci.yml").write_text(
+                "schema: 1\nitems: [a]\n",
+                encoding="utf-8",
+            )
+            folder = repo / "a"
+            folder.mkdir()
+            (folder / "ci.yml").write_text(
+                "id: a\n"
+                "steps:\n"
+                "  - id: build\n"
+                "    run: [python, -c, 'print(1)']\n"
+                "    outputs: [result.json]\n"
+                "  - id: verify\n"
+                "    run: [python, -c, 'print(2)']\n"
+                "    outputs: [result.json]\n",
+                encoding="utf-8",
+            )
+            with self.assertRaisesRegex(ConfigError, "step outputs overlap"):
+                load_repository(repo)
+
+    def test_rejects_parent_child_output_overlap(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp)
+            (repo / "cad-ci.yml").write_text(
+                "schema: 1\nitems: [a]\n",
+                encoding="utf-8",
+            )
+            folder = repo / "a"
+            folder.mkdir()
+            (folder / "ci.yml").write_text(
+                "id: a\n"
+                "steps:\n"
+                "  - id: build\n"
+                "    run: [python, -c, 'print(1)']\n"
+                "    outputs: [results]\n"
+                "  - id: verify\n"
+                "    run: [python, -c, 'print(2)']\n"
+                "    outputs: [results/verify.json]\n",
+                encoding="utf-8",
+            )
+            with self.assertRaisesRegex(ConfigError, "step outputs overlap"):
+                load_repository(repo)
+
     def test_rejects_dependency_cycle(self):
         with tempfile.TemporaryDirectory() as tmp:
             repo = Path(tmp)

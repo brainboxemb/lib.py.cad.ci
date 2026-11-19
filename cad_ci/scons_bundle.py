@@ -1,13 +1,11 @@
-"""Create and restore cacheable bundles for declared CI step outputs.
+"""Package and materialize declared step output for the SCons engine.
 
-SCons caches ordinary files well but a CAD CI step may declare either files or
-complete directories. Each step therefore has one deterministic tar bundle as
-its SCons target. The user command writes its normal output below build/<item>;
-the bundle captures that output for CacheDir, and a separate materializer
-restores it when the bundle is current or cache-restored.
+Each step has one deterministic regular-file target: an uncompressed tar
+bundle. The bundle lets SCons CacheDir handle files and complete directories
+uniformly, including empty directories.
 
-The bundle is execution evidence, not a second rebuild-decision engine. SCons
-alone decides whether the bundle target needs to be rebuilt.
+This module verifies output integrity and materializes bundle contents. It does
+not decide whether a step should rebuild; SCons owns that decision.
 """
 
 from __future__ import annotations
@@ -23,8 +21,9 @@ import tempfile
 from typing import Any
 
 
-BUNDLE_MANIFEST = "__cad_ci_bundle__.json"
+BUNDLE_MANIFEST = ".cad-ci/__bundle__.json"
 BUNDLE_SCHEMA = 1
+MATERIALIZATION_RESULTS = ("UNCHANGED", "RESTORED", "REPAIRED")
 
 
 class BundleError(RuntimeError):
@@ -32,7 +31,7 @@ class BundleError(RuntimeError):
 
 
 def _sha256_file(path: Path) -> str:
-    """Return a SHA-256 digest for one regular file."""
+    """Return the SHA-256 digest of one regular file."""
 
     digest = hashlib.sha256()
     with path.open("rb") as handle:
@@ -41,8 +40,34 @@ def _sha256_file(path: Path) -> str:
     return digest.hexdigest()
 
 
+def bundle_sha256(bundle: Path) -> str:
+    """Return the digest used as durable evidence for one target bundle."""
+
+    return _sha256_file(bundle)
+
+
+def _normalize_output(value: str) -> str:
+    """Return one safe POSIX output path relative to an item build root."""
+
+    normalized = value.replace("\\", "/").strip("/")
+    path = PurePosixPath(normalized)
+    if (
+        not normalized
+        or path.is_absolute()
+        or ".." in path.parts
+        or (path.parts and path.parts[0] == ".cad-ci")
+    ):
+        raise BundleError(f"unsafe declared output: {value}")
+    return path.as_posix()
+
+
 def _directory_digest(path: Path) -> str:
-    """Hash directory structure and file contents in stable relative order."""
+    """Hash complete directory membership and regular-file contents."""
+
+    if path.is_symlink():
+        raise BundleError(f"declared output is a symlink: {path}")
+    if not path.is_dir():
+        raise BundleError(f"declared directory output is not a directory: {path}")
 
     digest = hashlib.sha256()
     digest.update(b"directory\0")
@@ -63,22 +88,15 @@ def _directory_digest(path: Path) -> str:
     return digest.hexdigest()
 
 
-def _normalized_output(value: str) -> str:
-    """Return one safe POSIX-style output path relative to an item build root."""
-
-    normalized = value.replace("\\", "/").strip("/")
-    path = PurePosixPath(normalized)
-    if not normalized or path.is_absolute() or ".." in path.parts:
-        raise BundleError(f"unsafe declared output: {value}")
-    return path.as_posix()
-
-
-def output_snapshot(output_root: Path, outputs: tuple[str, ...] | list[str]) -> dict[str, dict[str, Any]]:
-    """Describe current declared output, raising when anything is missing."""
+def output_snapshot(
+    output_root: Path,
+    outputs: tuple[str, ...] | list[str],
+) -> dict[str, dict[str, Any]]:
+    """Describe declared output, raising when anything is missing or unsafe."""
 
     result: dict[str, dict[str, Any]] = {}
     for raw in outputs:
-        name = _normalized_output(str(raw))
+        name = _normalize_output(str(raw))
         path = output_root / Path(name)
         if path.is_symlink():
             raise BundleError(f"declared output is a symlink: {path}")
@@ -99,8 +117,8 @@ def output_snapshot(output_root: Path, outputs: tuple[str, ...] | list[str]) -> 
     return result
 
 
-def _tar_filter(info: tarfile.TarInfo) -> tarfile.TarInfo:
-    """Normalize archive ownership/timestamps while preserving file modes."""
+def _normalized_tar_info(info: tarfile.TarInfo) -> tarfile.TarInfo:
+    """Normalize non-content archive metadata for deterministic bundle bytes."""
 
     info.uid = 0
     info.gid = 0
@@ -110,12 +128,54 @@ def _tar_filter(info: tarfile.TarInfo) -> tarfile.TarInfo:
     return info
 
 
-def write_bundle(bundle: Path, output_root: Path, outputs: tuple[str, ...] | list[str]) -> dict:
-    """Write one deterministic tar bundle containing every declared output."""
+def _add_path(
+    archive: tarfile.TarFile,
+    path: Path,
+    *,
+    arcname: str,
+) -> None:
+    """Add one file/directory tree in lexical order without following links."""
 
-    normalized = tuple(_normalized_output(str(value)) for value in outputs)
+    if path.is_symlink():
+        raise BundleError(f"declared output is a symlink: {path}")
+
+    entries = [path]
+    if path.is_dir():
+        entries.extend(
+            sorted(path.rglob("*"), key=lambda value: value.as_posix())
+        )
+
+    for entry in entries:
+        if entry.is_symlink():
+            raise BundleError(f"declared output contains a symlink: {entry}")
+        relative = entry.relative_to(path)
+        member_name = (
+            arcname
+            if not relative.parts
+            else f"{arcname}/{relative.as_posix()}"
+        )
+        info = _normalized_tar_info(
+            archive.gettarinfo(str(entry), arcname=member_name)
+        )
+        if entry.is_file():
+            with entry.open("rb") as handle:
+                archive.addfile(info, handle)
+        elif entry.is_dir():
+            archive.addfile(info)
+        else:
+            raise BundleError(f"unsupported declared output entry: {entry}")
+
+
+def write_bundle(
+    bundle: Path,
+    output_root: Path,
+    outputs: tuple[str, ...] | list[str],
+) -> dict[str, Any]:
+    """Write one deterministic target bundle for all declared step output."""
+
+    normalized = tuple(_normalize_output(str(value)) for value in outputs)
     snapshot = output_snapshot(output_root, normalized)
-    manifest = {
+    manifest: dict[str, Any] = {
         "schema": BUNDLE_SCHEMA,
         "outputs": snapshot,
     }
@@ -132,32 +192,24 @@ def write_bundle(bundle: Path, output_root: Path, outputs: tuple[str, ...] | lis
     try:
         with tarfile.open(temp, "w") as archive:
             for name in sorted(normalized):
-                path = output_root / Path(name)
-                # tarfile can store links. CI output may not escape its owned
-                # tree, so reject them before adding the tree recursively.
-                if path.is_symlink():
-                    raise BundleError(f"declared output is a symlink: {path}")
-                if path.is_dir():
-                    for child in path.rglob("*"):
-                        if child.is_symlink():
-                            raise BundleError(
-                                f"declared output contains a symlink: {child}"
-                            )
-                archive.add(
-                    path,
+                _add_path(
+                    archive,
+                    output_root / Path(name),
                     arcname=name,
-                    recursive=True,
-                    filter=_tar_filter,
                 )
 
             payload = (
-                json.dumps(manifest, sort_keys=True, separators=(",", ":"))
+                json.dumps(
+                    manifest,
+                    sort_keys=True,
+                    separators=(",", ":"),
+                )
                 + "\n"
             ).encode("utf-8")
             info = tarfile.TarInfo(BUNDLE_MANIFEST)
             info.size = len(payload)
             info.mode = 0o644
-            info = _tar_filter(info)
+            info = _normalized_tar_info(info)
             archive.addfile(info, io.BytesIO(payload))
 
         temp.replace(bundle)
@@ -167,8 +219,8 @@ def write_bundle(bundle: Path, output_root: Path, outputs: tuple[str, ...] | lis
     return manifest
 
 
-def read_bundle_manifest(bundle: Path) -> dict:
-    """Read and validate the metadata stored inside one CAD CI bundle."""
+def read_bundle_manifest(bundle: Path) -> dict[str, Any]:
+    """Read and validate metadata stored inside one target bundle."""
 
     try:
         with tarfile.open(bundle, "r") as archive:
@@ -177,7 +229,12 @@ def read_bundle_manifest(bundle: Path) -> dict:
             if extracted is None:
                 raise BundleError(f"bundle has no readable manifest: {bundle}")
             data = json.loads(extracted.read().decode("utf-8"))
-    except (FileNotFoundError, KeyError, tarfile.TarError, json.JSONDecodeError) as exc:
+    except (
+        FileNotFoundError,
+        KeyError,
+        tarfile.TarError,
+        json.JSONDecodeError,
+    ) as exc:
         raise BundleError(f"invalid output bundle: {bundle}") from exc
 
     if not isinstance(data, dict) or data.get("schema") != BUNDLE_SCHEMA:
@@ -193,11 +250,11 @@ def outputs_match_bundle(
     output_root: Path,
     outputs: tuple[str, ...] | list[str],
 ) -> bool:
-    """Return whether current declared output exactly matches bundle metadata."""
+    """Return whether materialized output exactly matches bundle metadata."""
 
     try:
         expected = read_bundle_manifest(bundle)["outputs"]
-        normalized = tuple(_normalized_output(str(value)) for value in outputs)
+        normalized = tuple(_normalize_output(str(value)) for value in outputs)
         if set(expected) != set(normalized):
             return False
         return output_snapshot(output_root, normalized) == expected
@@ -205,8 +262,8 @@ def outputs_match_bundle(
         return False
 
 
-def _remove_output(path: Path) -> None:
-    """Remove one file/directory output before restoring it from a bundle."""
+def _remove_path(path: Path) -> None:
+    """Remove one owned file/directory without following a symlink."""
 
     if path.is_symlink() or path.is_file():
         path.unlink(missing_ok=True)
@@ -214,15 +271,27 @@ def _remove_output(path: Path) -> None:
         shutil.rmtree(path)
 
 
+def remove_outputs(
+    output_root: Path,
+    outputs: tuple[str, ...] | list[str],
+) -> None:
+    """Remove only the output paths owned by one step."""
+
+    for raw in outputs:
+        name = _normalize_output(str(raw))
+        _remove_path(output_root / Path(name))
+
+
 def _member_is_allowed(name: str, outputs: tuple[str, ...]) -> bool:
-    """Return whether one archive member belongs to a declared output path."""
+    """Return whether an archive member belongs to declared consumer output."""
 
     path = PurePosixPath(name)
     if path.is_absolute() or ".." in path.parts:
         return False
     normalized = path.as_posix()
     return any(
-        normalized == output or normalized.startswith(output.rstrip("/") + "/")
+        normalized == output
+        or normalized.startswith(output.rstrip("/") + "/")
         for output in outputs
     )
 
@@ -231,25 +300,26 @@ def materialize_bundle(
     bundle: Path,
     output_root: Path,
     outputs: tuple[str, ...] | list[str],
-) -> bool:
-    """Restore declared output from a bundle when current output differs.
+) -> str:
+    """Ensure output matches a bundle and report how materialization changed it."""
 
-    Returns True when files/directories were restored and False when the
-    existing output already matched the bundle.
-    """
-
-    normalized = tuple(_normalized_output(str(value)) for value in outputs)
+    normalized = tuple(_normalize_output(str(value)) for value in outputs)
     manifest = read_bundle_manifest(bundle)
     expected = manifest["outputs"]
     if set(expected) != set(normalized):
         raise BundleError("bundle outputs do not match configured outputs")
 
     if outputs_match_bundle(bundle, output_root, normalized):
-        return False
+        return "UNCHANGED"
+
+    existed_before = any(
+        (output_root / Path(name)).exists()
+        or (output_root / Path(name)).is_symlink()
+        for name in normalized
+    )
 
     output_root.mkdir(parents=True, exist_ok=True)
-    for name in normalized:
-        _remove_output(output_root / Path(name))
+    remove_outputs(output_root, normalized)
 
     try:
         with tarfile.open(bundle, "r") as archive:
@@ -266,17 +336,16 @@ def materialize_bundle(
                         f"bundle member escapes declared output: {member.name}"
                     )
                 members.append(member)
-            archive.extractall(output_root, members=members, filter="data")
+            archive.extractall(
+                output_root,
+                members=members,
+                filter="data",
+            )
     except tarfile.TarError as exc:
         raise BundleError(f"could not restore output bundle: {bundle}") from exc
 
     current = output_snapshot(output_root, normalized)
     if current != expected:
         raise BundleError("restored output does not match bundle metadata")
-    return True
 
-
-def bundle_sha256(bundle: Path) -> str:
-    """Return the digest used as durable result evidence for one step bundle."""
-
-    return _sha256_file(bundle)
+    return "REPAIRED" if existed_before else "RESTORED"

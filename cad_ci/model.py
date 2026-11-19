@@ -14,12 +14,15 @@ class Step:
     `run` is either an argv tuple or a shell command. `outputs` lists files
     that must exist below the item's build directory after the step succeeds.
     `timeout_seconds` is the effective repository default or step override.
+    `inputs` is an optional repository-relative pattern set; None means inherit
+    the owning item's `watch` patterns.
     """
 
     id: str
     run: str | tuple[str, ...]
     outputs: tuple[str, ...] = ()
     timeout_seconds: int | None = None
+    inputs: tuple[str, ...] | None = None
 
 
 @dataclass(frozen=True)

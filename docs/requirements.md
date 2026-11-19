@@ -90,7 +90,8 @@ Consumer commands still run from the item source folder and receive:
 
 A normal run requests the final target of every selected top-level item.
 
-Partial execution is explicit:
+Partial execution is explicit. `--step`, `--until` and `--from` are
+mutually exclusive.
 
 - `--step <id>`: force that exact step action once; SCons first makes its
   prerequisites current. Later steps are not requested.
@@ -129,7 +130,11 @@ Output paths:
 - cannot use the reserved `.cad-ci/` evidence namespace;
 - must not overlap output paths owned by another step of the same item.
 
-A successful step must produce every declared output.
+Immediately before a step action runs, CAD CI removes only that step's own
+declared output paths after all prerequisite output has been materialized. This
+prevents stale files from a previous invocation becoming part of the new result.
+
+A successful step must then recreate every declared output.
 
 A complete directory output includes its nested files and empty directories.
 
@@ -139,7 +144,9 @@ refer outside the owned output tree.
 ## 8. SCons target artifact and cache
 
 The cacheable SCons target for one step is an internal deterministic bundle
-containing exactly that step's declared outputs plus an output manifest.
+representing the complete item output state after that step. It contains the
+declared outputs of that step plus all outputs owned by earlier steps, together
+with an output manifest.
 
 The internal bundle:
 - is not part of durable `build/` output;
@@ -150,8 +157,10 @@ The internal bundle:
 
 SCons local state/cache lives below `.cache/cad-ci/` and is never published.
 
-After SCons makes a prerequisite bundle current, CAD CI materializes that
-bundle before a dependent consumer command uses it.
+Because bundles are cumulative, an item's final bundle represents every
+declared output of the complete item. After SCons makes a prerequisite bundle
+current, CAD CI materializes that bundle before a dependent consumer command
+uses it.
 
 After the run, requested/active step bundles are materialized into
 `build/<item>/` in step order. Materialization may repair missing/tampered
@@ -166,8 +175,12 @@ Each active step has one structured outcome:
   absent target bundle from CacheDir.
 - `CURRENT`: the action did not execute; the existing target bundle was
   already current.
-- `ERROR`: command failure, timeout, missing/invalid output, invalid bundle or
-  failed materialization prevented a valid result.
+- `ERROR`: the SCons target itself has no valid result because the command,
+  timeout, declared output or target bundle failed.
+
+Materialization is a separate observation and never rewrites a successful SCons
+decision. A step is usable only when its SCons outcome is not `ERROR` and its
+materialization is not `ERROR`.
 
 Materialization has a separate observation:
 - `UNCHANGED`: durable local output already matched the bundle;
@@ -193,8 +206,10 @@ Step evidence records at least:
 - schema version;
 - item and step IDs;
 - engine and engine schema;
-- outcome;
+- SCons outcome;
 - materialization result;
+- overall status (`pass`, `fail`, `timeout`, `output_error` or
+  `materialization_error`);
 - action-executed flag;
 - timeout/exit/duration where applicable;
 - target-spec digest;

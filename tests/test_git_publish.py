@@ -17,6 +17,7 @@ from cad_ci.git_publish import (
     materialize_generated_branch,
 )
 from cad_ci.pages import Page, build_site
+from cad_ci.model import Item, Step
 
 
 def git(cwd: Path, *args: str) -> str:
@@ -70,16 +71,47 @@ def init_remote(root: Path) -> tuple[Path, Path]:
     return source, remote
 
 
-def write_item(root: Path, path: str, value: str) -> None:
-    """Write one complete fake runner item result."""
+def configured_item(path: str, item_id: str) -> Item:
+    """Create minimal current item configuration for publication tests."""
 
-    item = root / path
-    item.mkdir(parents=True)
-    (item / "result.txt").write_text(value)
-    (item / "item.json").write_text(json.dumps({
+    rel = Path(path)
+    return Item(
+        id=item_id,
+        path=rel,
+        kind="case",
+        needs=(),
+        watch=(f"{rel.as_posix()}/**",),
+        affected="changed",
+        reuse=True,
+        steps=(
+            Step(
+                id="verify",
+                run=("python", "-c", "print(1)"),
+                outputs=("result.txt",),
+            ),
+        ),
+        config_path=rel / "ci.yml",
+        config_data={"id": item_id},
+    )
+
+
+def write_item(root: Path, item: Item, value: str) -> None:
+    """Write one complete fake SCons item result."""
+
+    folder = root / item.path
+    folder.mkdir(parents=True)
+    (folder / "result.txt").write_text(value)
+    evidence = folder / ".cad-ci" / "item.json"
+    evidence.parent.mkdir(parents=True)
+    evidence.write_text(json.dumps({
+        "schema": 1,
+        "engine": "scons",
+        "engine_schema": 1,
+        "item": item.id,
         "status": "pass",
-        "input_fingerprint": f"in-{value}",
-        "result_fingerprint": f"out-{value}",
+        "final_step": item.steps[-1].id,
+        "final_target_spec_digest": f"spec-{value}",
+        "final_bundle_sha256": f"bundle-{value}",
     }))
 
 
@@ -104,13 +136,15 @@ class GitPublishTests(unittest.TestCase):
             source, remote = init_remote(root)
 
             candidate = root / "candidate"
-            write_item(candidate, "qualification/a", "a")
-            write_item(candidate, "qualification/b", "b")
+            item_a = configured_item("cases/a", "a")
+            item_b = configured_item("cases/b", "b")
+            write_item(candidate, item_a, "a")
+            write_item(candidate, item_b, "b")
             main = root / "main-candidate"
             prepare_main(
                 candidate_root=candidate,
                 out=main,
-                item_paths=["qualification/a", "qualification/b"],
+                items=[item_a, item_b],
                 source_commit="main-1",
             )
             publish_build_scope(
@@ -124,7 +158,7 @@ class GitPublishTests(unittest.TestCase):
             prepare_overlay(
                 candidate_root=candidate,
                 out=overlay_a,
-                item_paths=["qualification/a"],
+                items=[item_a],
                 source_commit="pr-a",
                 pull_request=1,
             )
@@ -140,7 +174,7 @@ class GitPublishTests(unittest.TestCase):
             prepare_overlay(
                 candidate_root=candidate,
                 out=overlay_b,
-                item_paths=["qualification/b"],
+                items=[item_b],
                 source_commit="pr-b",
                 pull_request=2,
             )
@@ -156,7 +190,7 @@ class GitPublishTests(unittest.TestCase):
                 branch_file(
                     remote,
                     "build",
-                    "pr/1/qualification/a/result.txt",
+                    "pr/1/cases/a/result.txt",
                 ),
                 "a",
             )
@@ -164,7 +198,7 @@ class GitPublishTests(unittest.TestCase):
                 branch_file(
                     remote,
                     "build",
-                    "pr/2/qualification/b/result.txt",
+                    "pr/2/cases/b/result.txt",
                 ),
                 "b",
             )
@@ -172,7 +206,7 @@ class GitPublishTests(unittest.TestCase):
                 branch_file(
                     remote,
                     "build",
-                    "main/qualification/a/result.txt",
+                    "main/cases/a/result.txt",
                 ),
                 "a",
             )
@@ -327,12 +361,13 @@ class GitPublishTests(unittest.TestCase):
             source, remote = init_remote(root)
 
             candidate = root / "candidate"
-            write_item(candidate, "qualification/a", "a")
+            item_a = configured_item("cases/a", "a")
+            write_item(candidate, item_a, "a")
             main = root / "main-candidate"
             prepare_main(
                 candidate_root=candidate,
                 out=main,
-                item_paths=["qualification/a"],
+                items=[item_a],
                 source_commit="main-1",
             )
             published = publish_build_scope(
@@ -351,7 +386,7 @@ class GitPublishTests(unittest.TestCase):
 
             self.assertEqual(fetched, published)
             self.assertEqual(
-                (out / "main/qualification/a/result.txt").read_text(),
+                (out / "main/cases/a/result.txt").read_text(),
                 "a",
             )
             self.assertFalse((out / ".git").exists())

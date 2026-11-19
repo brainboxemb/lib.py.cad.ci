@@ -265,9 +265,18 @@ This is chosen because:
 - directory membership and empty directories must survive fresh-runner restore;
 - one target gives one cacheable result per step.
 
+Each step bundle represents the complete item state after that step.
+
 Bundle contents:
-- every declared output at its configured relative path;
-- reserved internal manifest `__cad_ci_bundle__.json`.
+- every output owned by the current step;
+- every output owned by earlier steps of the same item;
+- reserved internal manifest `.cad-ci/__bundle__.json`.
+
+For steps `prepare -> build -> verify`, the prepare bundle contains prepare
+outputs, the build bundle contains prepare + build outputs, and the verify
+bundle contains prepare + build + verify outputs. Therefore the final bundle is
+a complete item result and any earlier-step output change also changes the final
+dependency target.
 
 Bundle manifest schema 1:
 
@@ -306,13 +315,17 @@ Before a consumer step action executes:
 2. the CAD-CI action wrapper materializes required predecessor bundles in graph
    order;
 3. direct dependency item bundles are materialized;
-4. the consumer command runs.
+4. the wrapper removes only the current step's declared output paths;
+5. the consumer command runs and must recreate its declared outputs.
 
-For a same-item later step, preceding step bundles are materialized into the
-same item output root.
+Cleaning only the current step's owned paths prevents stale nested files from a
+previous run while preserving outputs owned by prerequisite steps.
 
-For an item dependency, all dependency step bundles are materialized in step
-order so the dependency output root represents the complete item.
+For a same-item later step, the immediately preceding cumulative bundle is
+enough to restore every earlier output.
+
+For an item dependency, its final cumulative bundle restores the complete item
+output tree.
 
 After SCons finishes successfully, CAD CI materializes the active/requested item
 bundles in step order once more.
@@ -428,8 +441,12 @@ valid afterward.
 
 ### ERROR
 
-No valid target result exists because of action failure, timeout, invalid
+No valid SCons target result exists because of action failure, timeout, invalid
 declared output or bundle failure.
+
+Materialization is reported independently. If materialization fails after a
+BUILT/CACHE_RESTORED/CURRENT decision, the SCons outcome is preserved and the
+step's overall status becomes `materialization_error`.
 
 Detection uses explicit action records plus pre/post target state. Console text
 is never parsed.
@@ -449,8 +466,8 @@ Schema 1 contains:
 - `engine: scons`;
 - `engine_schema`;
 - item/step IDs;
-- status;
-- build outcome;
+- overall status;
+- SCons outcome;
 - materialization result;
 - action-executed flag;
 - duration/exit/timeout where applicable;
@@ -478,6 +495,9 @@ Any run that does not ensure the final item target removes stale complete-item
 evidence for that item.
 
 ## 15. Partial command semantics
+
+`--step`, `--until` and `--from` are mutually exclusive. Combining them is
+a configuration/CLI error before SCons starts.
 
 ### Normal run
 

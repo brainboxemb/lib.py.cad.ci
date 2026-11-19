@@ -83,9 +83,14 @@ simple_case1/input/**
 Sequence:
 1. cold full run -> build B, verify B;
 2. identical -> build C, verify C;
-3. add a new matched file -> build B, verify B;
+3. clear CacheDir, then add a new matched file -> build B, verify B;
 4. identical -> build C, verify C;
-5. remove the matched file -> build B, verify B.
+5. clear CacheDir, then remove the matched file -> build B, verify B.
+
+CacheDir is deliberately cleared before the membership transitions because this
+case proves invalidation/action execution. Without clearing it, returning to an
+earlier exact signature may legitimately produce CACHE_RESTORED instead of
+BUILT; that behaviour is tested separately by the cache-restore cases.
 
 This proves glob membership is part of the target signature, not only contents
 of files that happened to exist during the previous run.
@@ -115,6 +120,27 @@ Expected runs:
 
 Before app build executes, the library output must already be materialized and
 available through `current_context().dependency("library")`.
+
+## Case 4A - earlier dependency output propagates through final bundle
+
+Dependency has two steps:
+
+~~~text
+prepare -> finish
+~~~
+
+Consumer reads the prepare output. The finish step writes a constant file that
+does not depend on prepare output.
+
+Sequence:
+1. cold -> dependency prepare B, finish B, consumer B;
+2. none -> all C;
+3. change only prepare input -> dependency prepare B, finish B, consumer B.
+
+The finish step's own declared output may remain byte-identical, but its
+cumulative final bundle must change because it also contains the changed
+prepare output. This proves the final dependency bundle represents the complete
+item state.
 
 ## Case 5 - two independent consumers of one dependency
 
@@ -280,7 +306,7 @@ Action creates:
 - empty directory `generated/empty/`.
 
 Expected:
-1. cold -> B, materialization M;
+1. cold -> B, materialization U (the successful action already wrote the output);
 2. identical -> C, materialization U;
 3. delete local `generated/` but keep target/state -> C, materialization M;
 4. tamper nested file -> C, materialization P;
