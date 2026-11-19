@@ -107,6 +107,15 @@ def _command_environment(spec: dict) -> dict[str, str]:
     """Build the environment exposed to the consumer command."""
 
     env = dict(os.environ)
+
+    # Repository variables override inherited runner/caller values. CAD-CI's
+    # own values are applied afterward and remain authoritative.
+    env.update(
+        {
+            str(name): str(value)
+            for name, value in spec.get("variables", {}).items()
+        }
+    )
     env.update(
         {
             "CAD_CI_REPO": str(ROOT),

@@ -34,6 +34,60 @@ class ConfigTests(unittest.TestCase):
             self.assertEqual(items["b"].needs, ("a",))
 
 
+    def test_root_variables_are_validated_and_shared_by_items(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp)
+            (repo / "cad-ci.yml").write_text(
+                "schema: 1\n"
+                "variables:\n"
+                "  Z_MODE: two\n"
+                "  MODEL_MODE: one\n"
+                "items: [a]\n",
+                encoding="utf-8",
+            )
+            folder = repo / "a"
+            folder.mkdir()
+            (folder / "ci.yml").write_text(
+                "id: a\n"
+                "steps: [{id: test, run: [python, -c, 'print(1)']}]\n",
+                encoding="utf-8",
+            )
+
+            item = load_repository(repo)["a"]
+            self.assertEqual(
+                item.variables,
+                (("MODEL_MODE", "one"), ("Z_MODE", "two")),
+            )
+
+    def test_rejects_invalid_repository_variables(self):
+        cases = (
+            ("variables: {lower_case: value}\n", "variable name"),
+            ("variables: {GITHUB_TOKEN: value}\n", "reserved variable"),
+            ("variables: {CAD_CI_OUTPUT: value}\n", "reserved variable"),
+            ("variables: {COUNT: 3}\n", "must be a string"),
+        )
+
+        for variable_yaml, expected in cases:
+            with self.subTest(variable_yaml=variable_yaml):
+                with tempfile.TemporaryDirectory() as tmp:
+                    repo = Path(tmp)
+                    (repo / "cad-ci.yml").write_text(
+                        "schema: 1\n"
+                        + variable_yaml
+                        + "items: [a]\n",
+                        encoding="utf-8",
+                    )
+                    folder = repo / "a"
+                    folder.mkdir()
+                    (folder / "ci.yml").write_text(
+                        "id: a\n"
+                        "steps: [{id: test, run: [python, -c, 'print(1)']}]\n",
+                        encoding="utf-8",
+                    )
+
+                    with self.assertRaisesRegex(ConfigError, expected):
+                        load_repository(repo)
+
     def test_accepts_direct_affected_strategy(self):
         with tempfile.TemporaryDirectory() as tmp:
             repo = Path(tmp)

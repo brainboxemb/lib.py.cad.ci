@@ -7,6 +7,7 @@ import json
 import shutil
 import tempfile
 import unittest
+from unittest.mock import patch
 
 from cad_ci.config import load_repository
 from cad_ci.scons_engine import (
@@ -176,6 +177,70 @@ assert (out / "build.json").read_text()
                 _outcomes(descriptive),
                 {"item:build": "CURRENT", "item:verify": "CURRENT"},
             )
+
+    def test_repository_variables_reach_commands_and_invalidate_targets(self):
+        self.require_scons()
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            _write(
+                root / "cad-ci.yml",
+                "schema: 1\n"
+                "variables: {MODEL_MODE: first}\n"
+                "items: [item]\n",
+            )
+            _write(
+                root / "item" / "run.py",
+                """import os
+from pathlib import Path
+out = Path(os.environ["CAD_CI_OUTPUT"])
+out.mkdir(parents=True, exist_ok=True)
+(out / "mode.txt").write_text(os.environ["MODEL_MODE"])
+""",
+            )
+            _write(
+                root / "item" / "ci.yml",
+                "id: item\n"
+                "steps:\n"
+                "  - id: build\n"
+                "    inputs: [item/run.py]\n"
+                "    run: [python, run.py]\n"
+                "    outputs: [mode.txt]\n",
+            )
+
+            with patch.dict("os.environ", {"MODEL_MODE": "caller"}):
+                cold = self.run_selected(root, {"item"})
+                self.assertEqual(_outcomes(cold), {"item:build": "BUILT"})
+                self.assertEqual(
+                    (root / "build/item/mode.txt").read_text(),
+                    "first",
+                )
+
+                current = self.run_selected(root, {"item"})
+                self.assertEqual(_outcomes(current), {"item:build": "CURRENT"})
+
+                root_config = root / "cad-ci.yml"
+                root_config.write_text(
+                    root_config.read_text(encoding="utf-8").replace(
+                        "MODEL_MODE: first",
+                        "MODEL_MODE: second",
+                    ),
+                    encoding="utf-8",
+                )
+                changed_variable = self.run_selected(root, {"item"})
+                self.assertEqual(
+                    _outcomes(changed_variable),
+                    {"item:build": "BUILT"},
+                )
+                self.assertEqual(
+                    (root / "build/item/mode.txt").read_text(),
+                    "second",
+                )
+
+                unchanged = self.run_selected(root, {"item"})
+                self.assertEqual(
+                    _outcomes(unchanged),
+                    {"item:build": "CURRENT"},
+                )
 
     def test_input_pattern_membership_invalidates_build(self):
         self.require_scons()

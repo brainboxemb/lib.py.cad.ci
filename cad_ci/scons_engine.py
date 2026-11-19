@@ -269,6 +269,7 @@ def target_specs(
                 "bundle_outputs": list(cumulative_outputs),
                 "timeout_seconds": configured_step.timeout_seconds,
                 "reuse": item.reuse,
+                "variables": dict(item.variables),
                 "resolved_inputs": list(resolved_inputs),
                 "needs": list(item.needs),
             }
@@ -287,6 +288,7 @@ def target_specs(
                     "bundle_outputs": list(cumulative_outputs),
                     "timeout_seconds": configured_step.timeout_seconds,
                     "reuse": item.reuse,
+                    "variables": dict(item.variables),
                     "sources": list(resolved_inputs),
                     "dependencies": dependencies,
                     "materialize_before": materialize_before,
