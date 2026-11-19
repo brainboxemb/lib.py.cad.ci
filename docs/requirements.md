@@ -144,7 +144,9 @@ refer outside the owned output tree.
 ## 8. SCons target artifact and cache
 
 The cacheable SCons target for one step is an internal deterministic bundle
-containing exactly that step's declared outputs plus an output manifest.
+representing the complete item output state after that step. It contains the
+declared outputs of that step plus all outputs owned by earlier steps, together
+with an output manifest.
 
 The internal bundle:
 - is not part of durable `build/` output;
@@ -155,8 +157,10 @@ The internal bundle:
 
 SCons local state/cache lives below `.cache/cad-ci/` and is never published.
 
-After SCons makes a prerequisite bundle current, CAD CI materializes that
-bundle before a dependent consumer command uses it.
+Because bundles are cumulative, an item's final bundle represents every
+declared output of the complete item. After SCons makes a prerequisite bundle
+current, CAD CI materializes that bundle before a dependent consumer command
+uses it.
 
 After the run, requested/active step bundles are materialized into
 `build/<item>/` in step order. Materialization may repair missing/tampered
