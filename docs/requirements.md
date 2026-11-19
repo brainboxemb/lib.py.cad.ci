@@ -28,6 +28,25 @@ Generic behaviour must not be hidden in GitHub Actions YAML or consumer helper
 scripts. Generic code must not know Forge, SolidCraft, model, qualification,
 integration, native or gate semantics.
 
+### Repository variables
+
+The root `cad-ci.yml` may define an optional `variables` mapping.
+
+Repository variables:
+- use uppercase environment-variable names;
+- have string values;
+- reject `GITHUB_*`, `RUNNER_*`, `ACTIONS_*` and `CAD_CI_*` names;
+- are injected into every configured consumer command;
+- override an inherited runner/caller variable with the same name;
+- cannot override CAD-CI-owned runtime values;
+- are included in every step's SCons target specification.
+
+Changing a repository variable is therefore an execution-significant change:
+an affected requested step must not remain `CURRENT` solely because its files
+and command are unchanged.
+
+Repositories without `variables` retain the existing behavior.
+
 ## 2. Two levels of selection
 
 Git selection and build selection are deliberately different.

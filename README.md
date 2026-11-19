@@ -9,6 +9,7 @@ SolidCraft or CAD-domain behaviour.
 
 The library owns:
 - configuration loading and validation;
+- repository-wide command variables from root `cad-ci.yml`;
 - coarse Git changed-item selection;
 - translation of item/step configuration to SCons targets;
 - timeout/output handling around consumer commands;

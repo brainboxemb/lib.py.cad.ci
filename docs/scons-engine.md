@@ -52,12 +52,23 @@ schema: 1
 defaults:
   timeout_seconds: 300
 
+variables:
+  SOLIDCRAFT_VERSION: "0.42.0"
+  RUNTIME_IMAGE: "ghcr.io/example/runtime:runtime-abc123"
+
 items:
   - tool
   - examples/*
 ~~~
 
 `defaults.timeout_seconds` is optional.
+
+`variables` is an optional repository-wide string mapping. Names use
+`^[A-Z_][A-Z0-9_]*$`. Names beginning with `GITHUB_`, `RUNNER_`,
+`ACTIONS_` or `CAD_CI_` are reserved and invalid.
+
+The validated mapping is sorted by name in the loaded model so its serialized
+form is deterministic.
 
 ### Item ci.yml
 
@@ -193,6 +204,10 @@ Stable JSON containing only settings that affect that step:
   "outputs": ["verify.json"],
   "timeout_seconds": 600,
   "reuse": true,
+  "variables": {
+    "RUNTIME_IMAGE": "ghcr.io/example/runtime:runtime-abc123",
+    "SOLIDCRAFT_VERSION": "0.42.0"
+  },
   "resolved_inputs": [
     "examples/simple_case/verify.py"
   ],
@@ -209,6 +224,10 @@ Not included:
 
 Therefore changing verify command/timeout/outputs invalidates verify without
 invalidating an unrelated build target.
+
+Repository variables are included in every step-spec Value because every
+consumer command receives them. Changing one repository variable therefore
+invalidates every active step that was produced under the previous mapping.
 
 A stable engine-schema Value participates in every target signature. Changing
 execution or bundle semantics deliberately invalidates old target entries.
@@ -350,12 +369,17 @@ cwd = <repo>/<item-path>
 Environment:
 
 ~~~text
+<repository variables from root cad-ci.yml>
 CAD_CI_REPO
 CAD_CI_ITEM
 CAD_CI_ITEM_PATH
 CAD_CI_OUTPUT
 CAD_CI_DEPENDENCIES_JSON
 ~~~
+
+Environment precedence is inherited runner/caller values, then repository
+variables, then CAD-CI-owned `CAD_CI_*` values. Root variable validation
+prevents a repository from declaring a CAD-CI-owned name.
 
 List commands execute directly without a shell. String commands use
 `shell=True` because the consumer explicitly requested shell syntax.
