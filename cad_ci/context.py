@@ -55,6 +55,7 @@ class ItemContext:
 
     repo: Path
     item: Item
+    output: Path
     _dependencies: dict[str, Dependency]
 
     def dependency(self, item_id: str) -> Dependency:
@@ -115,4 +116,9 @@ def current_context(
             _outputs=_declared_outputs(dependency),
         )
 
-    return ItemContext(repo=repo, item=item, _dependencies=dependencies)
+    return ItemContext(
+        repo=repo,
+        item=item,
+        output=item_output_dir(repo, item),
+        _dependencies=dependencies,
+    )

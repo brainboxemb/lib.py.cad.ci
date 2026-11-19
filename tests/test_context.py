@@ -62,6 +62,7 @@ class DependencyContextTests(unittest.TestCase):
             items = self.make_repo(repo)
             run_item(repo, items["producer"], items)
             context = current_context(repo=repo, item_id="consumer")
+            self.assertEqual(context.output, repo / "build/consumer")
             dependency = context.dependency("producer")
             self.assertEqual(
                 dependency.output("result.txt").read_text(encoding="utf-8"),

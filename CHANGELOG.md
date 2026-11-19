@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.2
+
+- expose the current item output directory through ItemContext.output.
+
 ## 0.1.1
 
 - add validated runtime dependency context for consumer aggregate steps;
