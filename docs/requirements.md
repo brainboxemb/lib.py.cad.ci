@@ -1,78 +1,254 @@
 # CI requirements
 
-This document is the contract for the generic CAD CI stack. A real consumer
-must not be migrated until the released library and tool satisfy this contract
-and `tool.cad.ci.test` proves the complete stack end to end.
+This document is the product contract for the generic CAD CI stack. It defines
+observable behaviour. Implementation details belong in `docs/scons-engine.md`
+and expected test sequences in `docs/scons-acceptance.md`.
 
-## 1. Configuration
+A Forge or CAD consumer must not migrate until one exact released
+`lib.py.cad.ci` + `tool.cad.ci` stack satisfies this contract and
+`tool.cad.ci.test` proves it end to end.
 
-The root `cad-ci.yml` owns repository-wide CI settings and lists item folders.
-Each item `ci.yml` owns its dependencies, watched inputs, ordered steps,
-outputs and step-specific overrides.
+## 1. Configuration ownership
+
+The root `cad-ci.yml` owns repository-wide CI settings and item discovery.
+
+Each item `ci.yml` owns:
+- item ID and descriptive kind;
+- direct item dependencies;
+- coarse Git-selection paths;
+- affected-item strategy;
+- ordered steps;
+- exact step inputs where narrower inputs are useful;
+- commands;
+- declared outputs;
+- execution timeout;
+- cache/reuse policy.
 
 Generic behaviour must not be hidden in GitHub Actions YAML or consumer helper
-scripts. The generic library must not know Forge, SolidCraft or CAD-domain
-semantics.
+scripts. Generic code must not know Forge, SolidCraft, model, qualification,
+integration, native or gate semantics.
 
-## 2. Step execution
+## 2. Two levels of selection
 
-Steps run in declared order from the item folder. The runner supports complete
-runs, one exact step, `--from` and `--until`.
+Git selection and build selection are deliberately different.
 
-A partial run may use only current prerequisite state. It must never claim that
-the complete item was rebuilt when the final required step did not run.
+### Git selection
 
-Each item writes only below its own mirrored build path.
+`watch` determines which top-level items are selected from a Git diff.
 
-## 3. Timeouts
+The supported affected strategies are:
+- `changed`: own watched changes and selected dependency changes select the item;
+- `direct`: only own watched changes select the item automatically;
+- `always`: every changed-file plan selects the item.
 
-The repository can define a default step timeout in `cad-ci.yml`. A step may
-override that value in its own `ci.yml`.
+This is coarse repository/PR selection only.
 
-Timeout values are validated. A timed-out process is reported as a timeout,
-not as an ordinary command exit failure, and its result is never reusable.
+### Build selection
 
-A timeout must never be interpreted as proof that an external resource does
-not exist.
+Once top-level item targets are requested, SCons alone determines which step
+targets and prerequisites are dirty, current or cache-restorable.
 
-## 4. Reuse
+CAD CI must not run a second fingerprint/reuse engine beside SCons.
 
-Reuse depends on:
-- watched inputs;
-- item configuration;
-- dependency results;
-- step configuration;
-- previous step result;
-- declared output hashes.
+## 3. Step inputs
 
-A changed timeout or other step setting changes the step fingerprint. Failed,
-timed-out, partial or incomplete output is never reusable.
+A step may declare `inputs` as repository-relative file/glob patterns.
 
-## 5. Planning
+When `inputs` is omitted, the step inherits the item's `watch` patterns so
+existing/simple consumers remain valid.
 
-Changed files select affected items deterministically. Dependency changes
-select dependants. Explicit item selection expands dependencies before the
-selected item.
+The item's own `ci.yml` is not treated as an undifferentiated file input.
+Relevant step configuration is represented in the step's SCons target
+specification. Therefore a change to a setting that affects one step need not
+invalidate unrelated earlier steps.
 
-A direct-only fan-in item must not widen an ordinary changed-file plan.
+Adding/removing a file matched by a step input pattern must invalidate that
+step even when the remaining file contents are unchanged.
 
-The complete plan can be printed without executing any item command.
+## 4. Step ordering and item dependencies
 
-## 6. Durable build output
+Every configured step is one logical build target.
 
-Local build output mirrors item source paths.
+Within an item:
+- step 1 has no previous-step prerequisite;
+- step N depends on step N-1.
 
-`build/main` is the complete accepted baseline.
-`build/pr/<number>` is a sparse overlay containing only rebuilt PR items.
+Between items:
+- the first step depends on the final step of every item in `needs`.
 
-Updating main replaces only selected item paths. Resolving a PR view starts
-from main and overlays the PR paths. Removing one PR changes only that PR
+SCons owns prerequisite ordering and decides which prerequisites actually need
+execution.
+
+Consumer commands still run from the item source folder and receive:
+- `CAD_CI_REPO`;
+- `CAD_CI_ITEM`;
+- `CAD_CI_ITEM_PATH`;
+- `CAD_CI_OUTPUT`;
+- validated direct-dependency output context.
+
+## 5. Full and partial execution
+
+A normal run requests the final target of every selected top-level item.
+
+Partial execution is explicit:
+
+- `--step <id>`: force that exact step action once; SCons first makes its
+  prerequisites current. Later steps are not requested.
+- `--until <id>`: request that step target without forcing it; SCons executes
+  only dirty prerequisites/target work.
+- `--from <id>`: request the item's final target and force the named step and
+  every following step. Earlier prerequisites are only rebuilt when SCons
+  considers them dirty.
+
+A partial run that does not ensure the final item target must not leave evidence
+claiming the complete item is current.
+
+A failed step leaves no successful target artifact that can be reused.
+
+## 6. Execution timeouts
+
+The repository can define a default `timeout_seconds` in root `cad-ci.yml`.
+
+A step can override that timeout.
+
+Timeout values are positive integers. A timeout:
+- terminates the command;
+- is recorded distinctly from a normal non-zero exit;
+- produces no successful step target;
+- is never cacheable/reusable;
+- is never interpreted as proof that an unrelated external resource is absent.
+
+## 7. Step outputs
+
+Every step declares the files/directories it owns below that item's
+`build/<source-item-path>/` directory.
+
+Output paths:
+- are relative;
+- cannot escape the item output directory;
+- cannot use the reserved `.cad-ci/` evidence namespace;
+- must not overlap output paths owned by another step of the same item.
+
+A successful step must produce every declared output.
+
+A complete directory output includes its nested files and empty directories.
+
+Symlinks inside declared output are rejected because durable output must not
+refer outside the owned output tree.
+
+## 8. SCons target artifact and cache
+
+The cacheable SCons target for one step is an internal deterministic bundle
+containing exactly that step's declared outputs plus an output manifest.
+
+The internal bundle:
+- is not part of durable `build/` output;
+- supports file and complete-directory outputs uniformly;
+- is the object stored/restored through SCons `CacheDir`;
+- contains stable output metadata/hashes;
+- is invalidated by SCons input/action/spec signatures.
+
+SCons local state/cache lives below `.cache/cad-ci/` and is never published.
+
+After SCons makes a prerequisite bundle current, CAD CI materializes that
+bundle before a dependent consumer command uses it.
+
+After the run, requested/active step bundles are materialized into
+`build/<item>/` in step order. Materialization may repair missing/tampered
+local output without changing SCons' build decision.
+
+## 9. Build outcomes
+
+Each active step has one structured outcome:
+
+- `BUILT`: the consumer action executed successfully in this run.
+- `CACHE_RESTORED`: the action did not execute; SCons restored a previously
+  absent target bundle from CacheDir.
+- `CURRENT`: the action did not execute; the existing target bundle was
+  already current.
+- `ERROR`: command failure, timeout, missing/invalid output, invalid bundle or
+  failed materialization prevented a valid result.
+
+Materialization has a separate observation:
+- `UNCHANGED`: durable local output already matched the bundle;
+- `RESTORED`: output was absent and was materialized;
+- `REPAIRED`: output existed but did not match and was replaced;
+- `ERROR`: materialization failed.
+
+Console wording must never be parsed to infer either result.
+
+## 10. Evidence, not rebuild state
+
+Successful/failed run evidence is written below the reserved item namespace:
+
+```text
+build/<item>/.cad-ci/item.json
+build/<item>/.cad-ci/steps/<step>.json
+```
+
+Evidence records what happened and is publishable. It must not participate in
+SCons rebuild decisions.
+
+Step evidence records at least:
+- schema version;
+- item and step IDs;
+- engine and engine schema;
+- outcome;
+- materialization result;
+- action-executed flag;
+- timeout/exit/duration where applicable;
+- target-spec digest;
+- target bundle digest;
+- declared output manifest.
+
+Complete item evidence exists only when the final target was ensured
+successfully. It records at least:
+- schema version;
+- item ID;
+- status;
+- final step ID;
+- final target-spec digest;
+- final target bundle digest.
+
+Any run that stops before the final item target removes stale complete-item
+evidence for that item.
+
+## 11. Dependency output context
+
+A consumer may read only outputs declared by its direct `needs` items.
+
+SCons makes the dependency's final target current first. CAD CI then
+materializes and validates the dependency bundle before running the consumer
+command.
+
+The runtime context exposes:
+- dependency item ID;
+- materialized output root;
+- declared output names;
+- final bundle digest.
+
+Runtime context validates integrity against the dependency bundle. It does not
+decide whether a dependency should rebuild.
+
+## 12. Durable build store
+
+Local candidate output mirrors source item paths.
+
+The durable generated `build` branch contains:
+- `main/`: complete accepted baseline;
+- `pr/<number>/`: sparse overlay containing only selected PR item paths.
+
+Publication validates successful complete-item evidence from
+`.cad-ci/item.json`.
+
+A durable item manifest row records source provenance and evidence digests; it
+does not copy SCons' internal dependency database.
+
+Updating main replaces only selected item paths. Resolving a PR view starts from
+main and overlays the sparse PR paths. Removing one PR changes only that PR
 namespace.
 
-Durable item state contains enough source and fingerprint information to prove
-which result it represents.
-
-## 7. Pages
+## 13. Pages
 
 Stable Pages content lives at the root of `gh-pages`. PR previews live under
 `previews/pr-<number>/`.
@@ -80,122 +256,103 @@ Stable Pages content lives at the root of `gh-pages`. PR previews live under
 Updating stable Pages preserves previews. Updating or deleting one preview
 preserves stable content and all other previews.
 
-Generic code owns branch and directory mechanics. The consumer owns site
-content, styling and domain text.
+Generic code owns branch/directory mechanics. The consumer owns site content,
+styling and domain text.
 
-## 8. Generated branch writes
+## 14. Generated branch publication
 
 Generated branches are never force-pushed.
 
 Publication checks that the source ref still points to the expected source
-commit before preparing and immediately before publishing.
+commit before preparation and immediately before publishing.
 
-Only an actual generated-branch race is retried. Authentication, network,
-invalid source or other errors fail clearly and must not silently trigger
-fallback behaviour.
+Only a real generated-branch race is retried. Authentication, network, invalid
+source or other failures stop clearly and must not silently trigger fallback.
 
-## 9. External resources
+## 15. External resources
 
-When CI depends on an external package, image or other resource, its lookup
-must distinguish three states:
-
+For packages, images or other external resources, lookup distinguishes:
 1. present;
 2. explicitly absent;
 3. lookup failed.
 
-Only state 2 may trigger creation or build. Authentication errors, network
-errors, timeouts and other lookup failures must stop the run.
+Only explicit absence may trigger creation/build.
 
-An existence check should not download a complete large artifact when registry
-metadata can answer the question.
+Authentication errors, network errors, timeouts and other lookup failures stop
+the run. A full artifact download must not be used merely as an existence test
+when metadata/manifest inspection is available.
 
-## 10. Workflow boundary
+## 16. Workflow boundary
 
-GitHub Actions YAML may own:
-- triggers;
+GitHub Actions YAML may own only:
+- event triggers;
 - permissions;
-- source checkout;
+- checkout;
 - runner/language setup;
-- credentials and login;
-- invocation of released `tool.cad.ci`;
-- artifact upload/download required by GitHub Actions.
+- credential/login setup;
+- cache transport required by GitHub Actions;
+- invocation of a released `tool.cad.ci`;
+- GitHub-required artifact upload/download.
 
 Workflow YAML must not own:
-- changed-path selection;
+- changed-path logic;
+- item/step loops;
 - dependency ordering;
-- item loops;
-- item commands;
-- reuse decisions;
-- generic retry logic;
-- execution timeouts that belong to CI config;
-- fallback rules that reinterpret an error as missing state.
+- consumer commands;
+- rebuild/reuse decisions;
+- generic retry policy;
+- CAD-CI execution timeout policy;
+- error-to-fallback reinterpretation.
 
-## 11. Names
+## 17. Naming
 
-Operator-facing names describe the actual action using normal engineering
-words such as `build`, `test`, `verify`, `publish`, `cleanup` and
+Operator-facing names describe the literal action using normal engineering
+terms such as `build`, `test`, `verify`, `publish`, `cleanup` and
 `remove_stale_pr_output`.
 
-Do not introduce abstract CI-theory names when a literal action name exists.
+Do not introduce an abstract CI-theory term when a literal action name exists.
 
-## 12. Error model
+## 18. Error model
 
-The implementation must distinguish at least:
+The implementation distinguishes at least:
 - invalid configuration;
-- stale or missing prerequisite;
+- unknown item/step;
 - command exit failure;
 - timeout;
 - missing declared output;
+- unsafe/invalid output;
+- bundle/materialization failure;
 - external resource absent;
-- external lookup/auth/network error;
+- external lookup/auth/network failure;
 - stale source ref;
 - generated-branch push race.
 
-Fallback behaviour is defined per error class. A broad non-zero result must not
-be translated into an unrelated state.
+Fallback behaviour is explicit per class. A broad non-zero result must never be
+translated into an unrelated state.
 
-## 13. Verification layers
+## 19. Verification layers
 
-`lib.py.cad.ci` unit tests prove individual generic functions and error
-classes.
+`lib.py.cad.ci`:
+- unit tests for config, publication and error handling;
+- deterministic real-SCons conformance for execution semantics.
 
-`tool.cad.ci` tests prove CLI exposure only.
+`tool.cad.ci`:
+- thin CLI exposure tests only.
 
-`tool.cad.ci.test` proves the complete released stack using multiple
-representative top-level cases, for example:
+`tool.cad.ci.test`:
+- black-box end-to-end acceptance against one exact released tool/library stack;
+- multiple representative top-level consumer cases.
 
-```text
-simple_case1/
-more_complex_case2/
-dependency_case/
-partial_rerun_case/
-publish_case/
-timeout_case/
-external_error_case/
-```
+Forge/CAD:
+- consumers only after the released generic stack passes all required cases.
 
-Each case proves one coherent contract and should fail in a way that makes the
-broken contract obvious.
+## 20. Implementation gate
 
-## 14. Migration rule
+No further execution-engine implementation is considered complete until the
+expected sequences in `docs/scons-acceptance.md` are written first.
 
-Before a Forge or CAD migration starts, the released stack must already prove:
-- full run;
-- changed-item run;
-- reuse;
-- exact partial rerun;
-- timeout and ordinary command failure;
-- main build update;
-- sparse PR overlay and resolution;
-- PR cleanup;
-- stable and preview Pages;
-- stale source refusal;
-- generated-branch race retry;
-- clear external-resource present/absent/error handling.
+If implementation requires behaviour not described in this requirements file,
+stop implementation and change/review the contract before continuing.
 
-A consumer migration may contain only consumer-owned configuration and domain
-adapters. Discovering a missing generic feature stops the migration and returns
-work to the library/tool stack.
-
-The target is that a prepared consumer migration needs one implementation run
-and, at most, one consumer-specific correction/confirmation run.
+A prepared Forge or CAD migration should need one implementation run and at
+most one consumer-specific correction/confirmation run.
