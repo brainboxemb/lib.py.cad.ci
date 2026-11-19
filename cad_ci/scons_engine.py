@@ -29,7 +29,7 @@ from .scons_bundle import (
 ENGINE_SCHEMA = 1
 MANIFEST_SCHEMA = 1
 REPORT_SCHEMA = "cad-ci.scons-results"
-REPORT_SCHEMA_VERSION = 1
+REPORT_SCHEMA_VERSION = 2
 OUTCOMES = ("BUILT", "CACHE_RESTORED", "CURRENT", "ERROR")
 
 CACHE_ROOT = Path(".cache/cad-ci/scons/cache")
@@ -615,7 +615,7 @@ def write_public_evidence(
         _write_json(
             evidence,
             {
-                "schema": 1,
+                "schema": 2,
                 "engine": "scons",
                 "engine_schema": ENGINE_SCHEMA,
                 "item": row["item"],
