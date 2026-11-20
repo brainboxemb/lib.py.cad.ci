@@ -70,6 +70,13 @@ def manifest_row(item: Item, value: str, source_commit: str) -> dict:
         "final_step": state["final_step"],
         "final_target_spec_digest": state["final_target_spec_digest"],
         "final_bundle_sha256": state["final_bundle_sha256"],
+        "outputs": sorted(
+            {
+                output
+                for step in item.steps
+                for output in step.outputs
+            }
+        ),
     }
 
 
@@ -461,6 +468,319 @@ class BuildStoreTests(unittest.TestCase):
                 "does not match evidence",
             ):
                 load_manifest(root)
+
+
+    def test_nested_parent_and_child_prepare_without_collision(self):
+        """Complete main and PR scopes can contain parent and child items."""
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            parent = configured_item("cases/model", "parent")
+            child = configured_item("cases/model/reference", "child")
+            candidate = root / "candidate"
+            write_item(candidate, parent, "parent")
+            write_item(candidate, child, "child")
+
+            main = root / "main"
+            main_manifest = prepare_main(
+                candidate_root=candidate,
+                out=main,
+                items=[parent, child],
+                source_commit="main-new",
+            )
+            self.assertEqual(
+                set(main_manifest["items"]),
+                {"cases/model", "cases/model/reference"},
+            )
+            self.assertEqual(
+                main_manifest["items"]["cases/model"]["outputs"],
+                ["result.txt"],
+            )
+            self.assertEqual(
+                (main / "cases/model/result.txt").read_text(),
+                "parent",
+            )
+            self.assertEqual(
+                (main / "cases/model/reference/result.txt").read_text(),
+                "child",
+            )
+
+            overlay = root / "overlay"
+            overlay_manifest = prepare_overlay(
+                candidate_root=candidate,
+                out=overlay,
+                items=[parent, child],
+                source_commit="head-new",
+                pull_request=7,
+            )
+            self.assertEqual(
+                set(overlay_manifest["items"]),
+                {"cases/model", "cases/model/reference"},
+            )
+            self.assertTrue(
+                (overlay / "cases/model/.cad-ci/item.json").is_file()
+            )
+            self.assertTrue(
+                (
+                    overlay
+                    / "cases/model/reference/.cad-ci/item.json"
+                ).is_file()
+            )
+
+    def test_nested_child_only_overlay_does_not_import_parent(self):
+        """A sparse child overlay contains no parent-owned output/evidence."""
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            parent = configured_item("cases/model", "parent")
+            child = configured_item("cases/model/reference", "child")
+            candidate = root / "candidate"
+            write_item(candidate, parent, "parent")
+            write_item(candidate, child, "child")
+
+            overlay = root / "overlay"
+            prepare_overlay(
+                candidate_root=candidate,
+                out=overlay,
+                items=[child],
+                source_commit="head-new",
+                pull_request=7,
+            )
+
+            self.assertFalse(
+                (overlay / "cases/model/result.txt").exists()
+            )
+            self.assertFalse(
+                (overlay / "cases/model/.cad-ci").exists()
+            )
+            self.assertEqual(
+                (
+                    overlay
+                    / "cases/model/reference/result.txt"
+                ).read_text(),
+                "child",
+            )
+
+    def test_nested_parent_only_prepare_ignores_child_candidate_output(self):
+        """Preparing a parent never copies descendant item output implicitly."""
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            parent = configured_item("cases/model", "parent")
+            child = configured_item("cases/model/reference", "child")
+            candidate = root / "candidate"
+            write_item(candidate, parent, "parent")
+            write_item(candidate, child, "child")
+
+            overlay = root / "overlay"
+            prepare_overlay(
+                candidate_root=candidate,
+                out=overlay,
+                items=[parent],
+                source_commit="head-new",
+                pull_request=7,
+            )
+
+            self.assertEqual(
+                (overlay / "cases/model/result.txt").read_text(),
+                "parent",
+            )
+            self.assertFalse(
+                (overlay / "cases/model/reference").exists()
+            )
+
+    def test_nested_main_updates_preserve_unselected_item_bytes(self):
+        """Parent-only and child-only updates preserve the nested neighbor."""
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            parent = configured_item("cases/model", "parent")
+            child = configured_item("cases/model/reference", "child")
+            main = root / "main"
+            write_main(
+                main,
+                [(parent, "parent-old"), (child, "child-old")],
+            )
+
+            child_result_before = (
+                main / "cases/model/reference/result.txt"
+            ).read_bytes()
+            child_evidence_before = (
+                main
+                / "cases/model/reference/.cad-ci/item.json"
+            ).read_bytes()
+
+            parent_candidate = root / "parent-candidate"
+            write_item(parent_candidate, parent, "parent-new")
+            parent_updated = root / "parent-updated"
+            update_main(
+                main=main,
+                candidate_root=parent_candidate,
+                out=parent_updated,
+                items=[parent],
+                source_commit="parent-new",
+            )
+
+            self.assertEqual(
+                (
+                    parent_updated
+                    / "cases/model/reference/result.txt"
+                ).read_bytes(),
+                child_result_before,
+            )
+            self.assertEqual(
+                (
+                    parent_updated
+                    / "cases/model/reference/.cad-ci/item.json"
+                ).read_bytes(),
+                child_evidence_before,
+            )
+
+            parent_result_before = (
+                parent_updated / "cases/model/result.txt"
+            ).read_bytes()
+            parent_evidence_before = (
+                parent_updated / "cases/model/.cad-ci/item.json"
+            ).read_bytes()
+
+            child_candidate = root / "child-candidate"
+            write_item(child_candidate, child, "child-new")
+            child_updated = root / "child-updated"
+            update_main(
+                main=parent_updated,
+                candidate_root=child_candidate,
+                out=child_updated,
+                items=[child],
+                source_commit="child-new",
+            )
+
+            self.assertEqual(
+                (child_updated / "cases/model/result.txt").read_bytes(),
+                parent_result_before,
+            )
+            self.assertEqual(
+                (
+                    child_updated / "cases/model/.cad-ci/item.json"
+                ).read_bytes(),
+                parent_evidence_before,
+            )
+            self.assertEqual(
+                (
+                    child_updated
+                    / "cases/model/reference/result.txt"
+                ).read_text(),
+                "child-new",
+            )
+
+    def test_nested_resolve_and_promote_preserve_child(self):
+        """Parent overlay replacement does not erase a nested child."""
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            parent = configured_item("cases/model", "parent")
+            child = configured_item("cases/model/reference", "child")
+            main = root / "main"
+            write_main(
+                main,
+                [(parent, "parent-old"), (child, "child-old")],
+            )
+
+            candidate = root / "candidate"
+            write_item(candidate, parent, "parent-new")
+            overlay = root / "overlay"
+            prepare_overlay(
+                candidate_root=candidate,
+                out=overlay,
+                items=[parent],
+                source_commit="head-new",
+                pull_request=7,
+            )
+
+            resolved = root / "resolved"
+            resolve_view(main=main, overlay=overlay, out=resolved)
+            self.assertEqual(
+                (resolved / "cases/model/result.txt").read_text(),
+                "parent-new",
+            )
+            self.assertEqual(
+                (
+                    resolved / "cases/model/reference/result.txt"
+                ).read_text(),
+                "child-old",
+            )
+
+            promoted = root / "promoted"
+            promote_overlay(
+                main=main,
+                overlay=overlay,
+                out=promoted,
+                source_commit="main-new",
+            )
+            self.assertEqual(
+                (promoted / "cases/model/result.txt").read_text(),
+                "parent-new",
+            )
+            self.assertEqual(
+                (
+                    promoted / "cases/model/reference/result.txt"
+                ).read_text(),
+                "child-old",
+            )
+
+    def test_legacy_nonnested_row_without_outputs_remains_readable(self):
+        """Legacy schema-1 rows stay readable when ownership is unambiguous."""
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            write_main(root, [(self.item_a, "a")])
+            manifest_path = root / "build.json"
+            manifest = json.loads(manifest_path.read_text())
+            manifest["items"]["cases/item-a"].pop("outputs")
+            manifest_path.write_text(json.dumps(manifest))
+
+            loaded = load_manifest(root, expected_scope="main")
+            self.assertEqual(
+                loaded["items"]["cases/item-a"]["item_id"],
+                "item-a",
+            )
+
+    def test_legacy_nested_replacement_is_rejected(self):
+        """A legacy parent row may not clobber a nested stored child."""
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            parent = configured_item("cases/model", "parent")
+            child = configured_item("cases/model/reference", "child")
+            main = root / "main"
+            write_main(
+                main,
+                [(parent, "parent-old"), (child, "child-old")],
+            )
+
+            candidate = root / "candidate"
+            write_item(candidate, parent, "parent-new")
+            overlay = root / "overlay"
+            prepare_overlay(
+                candidate_root=candidate,
+                out=overlay,
+                items=[parent],
+                source_commit="head-new",
+                pull_request=7,
+            )
+            manifest_path = overlay / "build.json"
+            manifest = json.loads(manifest_path.read_text())
+            manifest["items"]["cases/model"].pop("outputs")
+            manifest_path.write_text(json.dumps(manifest))
+
+            with self.assertRaisesRegex(
+                BuildStoreError,
+                "legacy item ownership is ambiguous",
+            ):
+                resolve_view(
+                    main=main,
+                    overlay=overlay,
+                    out=root / "resolved",
+                )
 
 
 if __name__ == "__main__":
