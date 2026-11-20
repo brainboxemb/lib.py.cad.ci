@@ -30,7 +30,7 @@ class Item:
     """One consumer-owned folder that can be planned and run independently.
 
     The tool treats `kind` as descriptive metadata only. Behaviour comes from
-    the item's own config, dependencies, watch paths and ordered steps.
+    the item's own config, processing state, dependencies, watch paths and ordered steps.
     `variables` is the validated, sorted repository-wide environment mapping
     that applies to every command.
     """
@@ -38,6 +38,7 @@ class Item:
     id: str
     path: Path
     kind: str
+    process: bool
     needs: tuple[str, ...]
     watch: tuple[str, ...]
     affected: str

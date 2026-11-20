@@ -88,6 +88,45 @@ class ConfigTests(unittest.TestCase):
                     with self.assertRaisesRegex(ConfigError, expected):
                         load_repository(repo)
 
+    def test_process_defaults_true_and_accepts_false(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp)
+            (repo / "cad-ci.yml").write_text("schema: 1\nitems: [a, b]\n")
+            for name, process in (("a", ""), ("b", "process: false\n")):
+                folder = repo / name
+                folder.mkdir()
+                (folder / "ci.yml").write_text(
+                    f"id: {name}\n{process}steps: [{{id: test, run: [python, -c, 'print(1)']}}]\n"
+                )
+            items = load_repository(repo)
+            self.assertTrue(items["a"].process)
+            self.assertFalse(items["b"].process)
+
+    def test_rejects_non_boolean_process(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp)
+            (repo / "cad-ci.yml").write_text("schema: 1\nitems: [a]\n")
+            folder = repo / "a"
+            folder.mkdir()
+            (folder / "ci.yml").write_text(
+                "id: a\nprocess: enabled\nsteps: [{id: test, run: [python, -c, 'print(1)']}]\n"
+            )
+            with self.assertRaisesRegex(ConfigError, "process must be true or false"):
+                load_repository(repo)
+
+    def test_processed_item_cannot_need_non_processed_item(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp)
+            (repo / "cad-ci.yml").write_text("schema: 1\nitems: [a, b]\n")
+            for name, extra in (("a", "process: false\n"), ("b", "needs: [a]\n")):
+                folder = repo / name
+                folder.mkdir()
+                (folder / "ci.yml").write_text(
+                    f"id: {name}\n{extra}steps: [{{id: test, run: [python, -c, 'print(1)']}}]\n"
+                )
+            with self.assertRaisesRegex(ConfigError, "processed item b needs non-processed item"):
+                load_repository(repo)
+
     def test_accepts_direct_affected_strategy(self):
         with tempfile.TemporaryDirectory() as tmp:
             repo = Path(tmp)

@@ -61,5 +61,6 @@ This repository does not implement Forge-specific selection or model logic.
 | Issue | Status | Assessment |
 | --- | --- | --- |
 | #39 Add explicit process flag for CAD-CI items | now | Generic staged item selection required before Forge resumes qualification. |
+| #40 Add timestamps to CAD-CI run and step evidence | later | Separate observability improvement; defer until #39 is released through the full tool/test stack. |
 
 No other unfinished product work is active in this repository.

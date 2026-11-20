@@ -56,6 +56,21 @@ This keeps workflow-provided general environment available while making the
 repository's declared CI expectation authoritative and protecting CAD-CI's own
 runtime context.
 
+## Item processing
+
+Each item carries an explicit boolean `process` state that defaults to
+`true`. Configuration validation rejects a processed item that depends on a
+non-processed item, so the executable target graph cannot require an excluded
+node.
+
+Planning excludes non-processed items before changed-path selection,
+dependency fan-out and full-run selection. Explicit execution of a
+non-processed item is rejected. The SCons manifest contains targets only for
+processed items.
+
+This is repository-scope participation state, not rebuild state. It is not
+part of SCons target signatures and does not add a second freshness engine.
+
 ## Rebuild ownership
 
 SCons is the only generic rebuild/reuse engine. The library provides SCons with

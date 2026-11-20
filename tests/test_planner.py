@@ -92,6 +92,27 @@ class PlannerTests(unittest.TestCase):
                 ["lib", "example", "qa", "qb", "summary"],
             )
 
+    def test_non_processed_item_is_excluded_from_selection(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp)
+            self.make_repo(repo)
+            qa = repo / "qa" / "ci.yml"
+            qa.write_text("process: false\n" + qa.read_text())
+            items = load_repository(repo)
+            self.assertNotIn("qa", affected_items(items, None))
+            self.assertNotIn("qa", affected_items(items, ("qa/model.txt",)))
+            self.assertNotIn("qa", affected_items(items, ("cad-ci.yml",)))
+
+    def test_dependency_fanout_ignores_non_processed_dependant(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp)
+            self.make_repo(repo)
+            qa = repo / "qa" / "ci.yml"
+            qa.write_text("process: false\n" + qa.read_text())
+            items = load_repository(repo)
+            selected = affected_items(items, ("src/core.py",))
+            self.assertEqual(selected, {"lib", "example", "qb"})
+
     def test_always_item_is_selected_without_path_match(self):
         with tempfile.TemporaryDirectory() as tmp:
             repo = Path(tmp)
