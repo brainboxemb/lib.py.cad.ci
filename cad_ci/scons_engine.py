@@ -174,12 +174,19 @@ def _effective_inputs(item: Item, step: Step) -> tuple[str, ...]:
 def _resolved_inputs(repo: Path, item: Item, step: Step) -> tuple[str, ...]:
     """Resolve stable source paths for one step target."""
 
-    config_relative = item.config_path.relative_to(repo).as_posix()
+    config_relative = tuple(
+        path.as_posix()
+        for path in (
+            item.config_paths
+            if item.config_paths
+            else (item.config_path.relative_to(repo),)
+        )
+    )
     try:
         files = files_for_patterns(
             repo,
             _effective_inputs(item, step),
-            exclude=(config_relative,),
+            exclude=config_relative,
         )
     except PathDiscoveryError as exc:
         raise SConsRunError(str(exc)) from exc
