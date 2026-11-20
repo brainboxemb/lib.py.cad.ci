@@ -7,60 +7,28 @@ issues contain detail and history.
 
 ## Current goal
 
-Complete #39: add an explicit required item-level `process: true|false`
-selection flag.
+Complete #42: release the merged `process` selection behavior as version 0.6.0.
 
-This is needed before Forge continues its staged model qualification. The flag
-must be generic CAD-CI behavior and must be released and black-box accepted
-before Forge consumes it.
+The product behavior from #39 is already merged through PR #41. This release
+change must contain no new CAD-CI behavior.
 
 ## Execution order
 
-1. Define the `process` contract in requirements:
-   - omitted `process` keeps normal existing item behavior;
-   - explicit `process: false` excludes that item from planning/execution;
-   - explicit `process: true` documents that the item participates normally;
-   - an active item may not depend on an excluded item;
-   - Forge will use this flag only on model-verification items, not to disable
-     the Forge library build/test item.
-2. Define exact planner/SCons semantics and acceptance sequences.
-3. Implement configuration/model/planner/runner support.
-4. Prove the behavior with library tests, including:
-   - missing/invalid `process`;
-   - full run exclusion;
-   - Git-selection exclusion;
-   - dependency fan-out exclusion;
-   - explicit selection rejection;
-   - active dependency validation;
-   - unchanged fan-out among active items.
-5. Release the new `lib.py.cad.ci` version after CI is green.
-6. Update and release `tool.cad.ci` against that exact library release.
-7. Update `tool.cad.ci.test` and pass the black-box staged-selection case.
-8. Only then let Forge adopt the released `process` behavior.
-
-## Forge consumer gate
-
-After the released stack passes black-box acceptance, Forge will use
-`process` for one vertical end-to-end proof:
-
-1. the Forge tool/library build and test item remains active;
-2. exactly five representative model-verification items are set to
-   `process: true`;
-3. every other model-verification item is set to `process: false`;
-4. the five active model verifications are taken through the complete Forge
-   chain;
-5. once that complete chain is green and stable, remaining model-verification
-   items are enabled one at a time;
-6. a change to a shared thin verification wrapper may deliberately rerun all
-   currently active model-verification items.
-
-This repository does not implement Forge-specific selection or model logic.
+1. Confirm the merged #39 implementation is green on main.
+2. Set VERSION and pyproject.toml to 0.6.0 and add the matching CHANGELOG entry.
+3. Pass the release PR tests and merge the release commit.
+4. Confirm the main release workflow publishes 0.6.0.
+5. Update this plan after release, then continue the released-stack path through
+   tool.cad.ci and tool.cad.ci.test before Forge consumes `process`.
 
 ## Open issue assessment — 2026-11-20
 
 | Issue | Status | Assessment |
 | --- | --- | --- |
-| #39 Add explicit process flag for CAD-CI items | now | Generic staged item selection required before Forge resumes qualification. |
-| #40 Add timestamps to CAD-CI run and step evidence | later | Separate observability improvement; defer until #39 is released through the full tool/test stack. |
+| #42 Release lib.py.cad.ci 0.6.0 with process selection | now | Release-only follow-up to merged #39; required before tool.cad.ci can pin the new behavior. |
+| #40 Add timestamps to CAD-CI run and step evidence | later | Separate observability improvement; do not mix it into the process-selection release chain. |
 
-No other unfinished product work is active in this repository.
+## Boundary
+
+The `process` contract, design and implementation are already complete on main.
+This issue changes only release metadata and the current repository plan.
