@@ -132,7 +132,7 @@ class PlannerTests(unittest.TestCase):
                 "items: [examples/a/*]\n"
                 "templates:\n"
                 "  reference:\n"
-                "    watch: {item: ['**/*.py']}\n"
+                "    watch: {item: ['**']}\n"
                 "    steps: [{id: build, run: [python, model.py]}]\n",
                 encoding="utf-8",
             )
