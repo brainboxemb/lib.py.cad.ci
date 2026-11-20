@@ -338,5 +338,144 @@ class ConfigTests(unittest.TestCase):
                 load_repository(repo)
 
 
+    def test_item_scoped_paths_normalize_to_repository_paths(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp)
+            (repo / "cad-ci.yml").write_text(
+                "schema: 1\nitems: [examples/a]\n",
+                encoding="utf-8",
+            )
+            folder = repo / "examples" / "a"
+            folder.mkdir(parents=True)
+            (folder / "ci.yml").write_text(
+                "id: a\n"
+                "watch:\n"
+                "  item: [scpf/**, tests/**]\n"
+                "  repo: [scripts/shared.py]\n"
+                "steps:\n"
+                "  - id: build\n"
+                "    inputs:\n"
+                "      item: [scpf/model.py]\n"
+                "      repo: [scripts/shared.py]\n"
+                "    run: [python, build.py]\n",
+                encoding="utf-8",
+            )
+
+            item = load_repository(repo)["a"]
+            self.assertEqual(
+                item.watch,
+                (
+                    "examples/a/scpf/**",
+                    "examples/a/tests/**",
+                    "scripts/shared.py",
+                ),
+            )
+            self.assertEqual(
+                item.steps[0].inputs,
+                (
+                    "examples/a/scpf/model.py",
+                    "scripts/shared.py",
+                ),
+            )
+
+    def test_root_template_keeps_local_item_short(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp)
+            (repo / "cad-ci.yml").write_text(
+                "schema: 1\n"
+                "items: [examples/a]\n"
+                "templates:\n"
+                "  model:\n"
+                "    kind: model\n"
+                "    needs: []\n"
+                "    watch:\n"
+                "      item: [scpf/**, tests/**]\n"
+                "    strategy: {reuse: true}\n"
+                "    steps:\n"
+                "      - id: build\n"
+                "        run: [python, build.py]\n"
+                "        outputs: [model.json]\n",
+                encoding="utf-8",
+            )
+            folder = repo / "examples" / "a"
+            folder.mkdir(parents=True)
+            (folder / "ci.yml").write_text(
+                "id: a\ntemplate: model\nprocess: true\n",
+                encoding="utf-8",
+            )
+
+            item = load_repository(repo)["a"]
+            self.assertEqual(item.kind, "model")
+            self.assertEqual(item.watch, ("examples/a/scpf/**", "examples/a/tests/**"))
+            self.assertEqual([step.id for step in item.steps], ["build"])
+            self.assertEqual(item.steps[0].outputs, ("model.json",))
+
+    def test_ancestor_children_defaults_apply_to_descendant(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp)
+            (repo / "cad-ci.yml").write_text(
+                "schema: 1\n"
+                "items: [examples/a/build123d]\n"
+                "templates:\n"
+                "  reference:\n"
+                "    kind: reference\n"
+                "    watch: {item: ['**/*.py']}\n"
+                "    steps:\n"
+                "      - id: build\n"
+                "        run: [python, model.py]\n",
+                encoding="utf-8",
+            )
+            examples = repo / "examples"
+            examples.mkdir()
+            (examples / "ci.yml").write_text(
+                "children:\n"
+                "  strategy: {reuse: true}\n",
+                encoding="utf-8",
+            )
+            model = examples / "a"
+            model.mkdir()
+            (model / "ci.yml").write_text(
+                "children:\n"
+                "  template: reference\n"
+                "  process: true\n",
+                encoding="utf-8",
+            )
+            child = model / "build123d"
+            child.mkdir()
+            (child / "ci.yml").write_text("{}\n", encoding="utf-8")
+
+            item = next(iter(load_repository(repo).values()))
+            self.assertEqual(item.id, "examples-a-build123d")
+            self.assertEqual(item.kind, "reference")
+            self.assertTrue(item.process)
+            self.assertTrue(item.reuse)
+            self.assertEqual(item.watch, ("examples/a/build123d/**/*.py",))
+            self.assertEqual(
+                tuple(path.as_posix() for path in item.config_paths),
+                (
+                    "examples/ci.yml",
+                    "examples/a/ci.yml",
+                    "examples/a/build123d/ci.yml",
+                ),
+            )
+
+    def test_unknown_template_is_rejected(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp)
+            (repo / "cad-ci.yml").write_text(
+                "schema: 1\nitems: [a]\n",
+                encoding="utf-8",
+            )
+            folder = repo / "a"
+            folder.mkdir()
+            (folder / "ci.yml").write_text(
+                "template: missing\n",
+                encoding="utf-8",
+            )
+
+            with self.assertRaisesRegex(ConfigError, "unknown template"):
+                load_repository(repo)
+
+
 if __name__ == "__main__":
     unittest.main()
