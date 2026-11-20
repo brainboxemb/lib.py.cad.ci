@@ -242,7 +242,7 @@ Do not hash the complete CAD-CI Python source tree into each target signature.
 
 ## 6. Source path rules
 
-Step `inputs` and item `watch` use repository-relative patterns.
+After configuration loading, step `inputs` and item `watch` always use normalized repository-relative patterns. Legacy YAML list syntax is repository-relative directly; scoped YAML mapping syntax may also contain item-root-relative patterns which the loader prefixes with the consuming item path.
 
 They may not:
 - be absolute;
