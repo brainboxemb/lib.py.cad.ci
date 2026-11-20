@@ -60,12 +60,12 @@ class SConsEngineTests(unittest.TestCase):
         **request_kwargs,
     ) -> dict:
         items = load_repository(root)
+        jobs = request_kwargs.pop("jobs", 1)
         request = resolve_request(
             items,
             selected,
             **request_kwargs,
         )
-        jobs = request_kwargs.pop("jobs", 1)
         return run_scons(root, items, request, jobs=jobs)
 
     def make_simple_repo(self, root: Path) -> None:
