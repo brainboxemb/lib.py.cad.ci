@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.7.1
+
+- fix durable build-store validation for current item evidence schema 2;
+- keep legacy stored item evidence schema 1 readable during migration;
+- continue rejecting unknown item evidence schemas;
+- leave build manifest schema, timing semantics and SCons behavior unchanged.
+
 ## 0.7.0
 
 - add UTC run timestamps to private reports and publishable step/item evidence;
