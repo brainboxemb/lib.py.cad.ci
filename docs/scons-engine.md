@@ -668,3 +668,31 @@ Then:
 
 If implementation reveals an undefined semantic choice, stop and update the
 design before coding further.
+
+
+## Timing evidence
+
+Timing fields never participate in target signatures or cache keys.
+
+Run scope:
+
+- capture `run_started_at` before the SCons invocation;
+- capture `run_finished_at` after target classification and output
+  materialization;
+- write both to the private run report;
+- copy both to every public step evidence file and complete item evidence file
+  written for that run.
+
+Action scope:
+
+- capture `started_at` immediately before the consumer command is invoked;
+- capture `finished_at` immediately after it returns or raises;
+- store both in the private action observation;
+- propagate both to the report row and public step evidence;
+- leave both values null for CURRENT and CACHE_RESTORED targets and for failures
+  before consumer-command execution.
+
+Format: UTC ISO-8601, millisecond precision, literal `Z`.
+
+`duration_seconds` keeps its current monotonic-clock definition. Timestamp
+fields are observability only.

@@ -24,12 +24,13 @@ from .scons_bundle import (
     materialize_bundle,
     read_bundle_manifest,
 )
+from .timing import utc_now
 
 
 ENGINE_SCHEMA = 1
 MANIFEST_SCHEMA = 1
 REPORT_SCHEMA = "cad-ci.scons-results"
-REPORT_SCHEMA_VERSION = 2
+REPORT_SCHEMA_VERSION = 3
 OUTCOMES = ("BUILT", "CACHE_RESTORED", "CURRENT", "ERROR")
 
 CACHE_ROOT = Path(".cache/cad-ci/scons/cache")
@@ -475,6 +476,8 @@ def _materialize_active(
 def write_report(
     repo: Path,
     manifest: Path,
+    *,
+    run_started_at: str,
 ) -> dict[str, Any]:
     """Materialize active output and write one machine-readable run report."""
 
@@ -551,9 +554,19 @@ def write_report(
                     outcome_errors[key]
                     or materialized[key].get("error")
                 ),
-                "action_executed": action is not None,
+                "action_executed": (
+                    False
+                    if action is None
+                    else bool(action.get("action_executed", True))
+                ),
                 "action_status": (
                     None if action is None else action.get("status")
+                ),
+                "started_at": (
+                    None if action is None else action.get("started_at")
+                ),
+                "finished_at": (
+                    None if action is None else action.get("finished_at")
                 ),
                 "duration_seconds": (
                     None if action is None else action.get("duration_seconds")
@@ -571,11 +584,14 @@ def write_report(
         )
 
     counts = Counter(row["outcome"] for row in rows)
+    run_finished_at = utc_now()
     report = {
         "schema": REPORT_SCHEMA,
         "schema_version": REPORT_SCHEMA_VERSION,
         "engine": "scons",
         "engine_schema": ENGINE_SCHEMA,
+        "started_at": run_started_at,
+        "finished_at": run_finished_at,
         "requested_keys": list(payload["requested_keys"]),
         "force_keys": list(payload["force_keys"]),
         "target_count": len(rows),
@@ -632,7 +648,7 @@ def write_public_evidence(
         _write_json(
             evidence,
             {
-                "schema": 2,
+                "schema": 3,
                 "engine": "scons",
                 "engine_schema": ENGINE_SCHEMA,
                 "item": row["item"],
@@ -642,6 +658,10 @@ def write_public_evidence(
                 "output_state": row["output_state"],
                 "error": row["error"],
                 "action_executed": row["action_executed"],
+                "run_started_at": report["started_at"],
+                "run_finished_at": report["finished_at"],
+                "started_at": row["started_at"],
+                "finished_at": row["finished_at"],
                 "duration_seconds": row["duration_seconds"],
                 "exit_code": row["exit_code"],
                 "timeout_seconds": row["timeout_seconds"],
@@ -673,11 +693,13 @@ def write_public_evidence(
         _write_json(
             item_evidence,
             {
-                "schema": 1,
+                "schema": 2,
                 "engine": "scons",
                 "engine_schema": ENGINE_SCHEMA,
                 "item": item.id,
                 "status": "pass",
+                "run_started_at": report["started_at"],
+                "run_finished_at": report["finished_at"],
                 "final_step": item.steps[-1].id,
                 "final_target_spec_digest": final["target_spec_digest"],
                 "final_bundle_sha256": final["bundle_sha256"],
@@ -704,7 +726,10 @@ def print_summary(report: dict[str, Any]) -> None:
         )
 
 
-def _empty_report() -> dict[str, Any]:
+def _empty_report(
+    run_started_at: str,
+    run_finished_at: str,
+) -> dict[str, Any]:
     """Return the standard no-target run report."""
 
     return {
@@ -712,6 +737,8 @@ def _empty_report() -> dict[str, Any]:
         "schema_version": REPORT_SCHEMA_VERSION,
         "engine": "scons",
         "engine_schema": ENGINE_SCHEMA,
+        "started_at": run_started_at,
+        "finished_at": run_finished_at,
         "requested_keys": [],
         "force_keys": [],
         "target_count": 0,
@@ -728,11 +755,12 @@ def run_scons(
     """Run one selected graph through SCons and produce output/evidence."""
 
     repo = repo.resolve()
+    run_started_at = utc_now()
     if isinstance(request, tuple):
         request = RunRequest(request, frozenset())
 
     if not request.requested_keys:
-        report = _empty_report()
+        report = _empty_report(run_started_at, utc_now())
         path = repo / REPORT_PATH
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(
@@ -763,7 +791,11 @@ def run_scons(
     if completed.stdout:
         print(completed.stdout, end="")
 
-    report = write_report(repo, manifest)
+    report = write_report(
+        repo,
+        manifest,
+        run_started_at=run_started_at,
+    )
     write_public_evidence(repo, items, report)
     print_summary(report)
 

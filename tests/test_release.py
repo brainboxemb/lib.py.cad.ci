@@ -5,7 +5,8 @@ import tempfile
 import unittest
 
 
-SCRIPT = Path(__file__).resolve().parents[1] / "scripts" / "publish_release.py"
+ROOT = Path(__file__).resolve().parents[1]
+SCRIPT = ROOT / "scripts" / "publish_release.py"
 SPEC = spec_from_file_location("publish_release", SCRIPT)
 if SPEC is None or SPEC.loader is None:
     raise RuntimeError(f"could not load {SCRIPT}")
@@ -80,6 +81,21 @@ class ReleaseTests(unittest.TestCase):
             subprocess.run(["git", "add", "VERSION"], cwd=root, check=True)
             subprocess.run(["git", "commit", "-qm", "release"], cwd=root, check=True)
             self.assertTrue(version_changed(root))
+
+    def test_release_job_skips_documentation_only_main_pushes(self):
+        workflow = (ROOT / ".github" / "workflows" / "ci.yml").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn(
+            "tool.py.lib.ci/.github/workflows/reusable-ci.yml@"
+            "d189d0718659ca3927f1dddbe373c1c788b11b6c",
+            workflow,
+        )
+        self.assertIn("needs: test", workflow)
+        self.assertIn(
+            "needs.test.outputs.change_scope != 'docs-only'",
+            workflow,
+        )
 
     def test_changelog_section_must_match(self):
         with tempfile.TemporaryDirectory() as tmp:

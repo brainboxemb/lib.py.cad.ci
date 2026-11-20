@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 import json
+import re
 import shutil
 import tempfile
 import unittest
@@ -36,6 +37,11 @@ def _outcomes(report: dict) -> dict[str, str]:
         key: str(row["outcome"])
         for key, row in _rows(report).items()
     }
+
+
+UTC_TIMESTAMP = re.compile(
+    r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$"
+)
 
 
 class SConsEngineTests(unittest.TestCase):
@@ -529,6 +535,9 @@ text = dependency.output("data.txt").read_text()
             self.assertEqual(row["outcome"], "ERROR")
             self.assertEqual(row["status"], "timeout")
             self.assertIsNone(row["exit_code"])
+            self.assertTrue(row["action_executed"])
+            self.assertRegex(row["started_at"], UTC_TIMESTAMP)
+            self.assertRegex(row["finished_at"], UTC_TIMESTAMP)
 
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -630,6 +639,14 @@ out = Path(os.environ["CAD_CI_OUTPUT"]) / "generated"
             row = _rows(fresh)["item:build"]
             self.assertEqual(row["outcome"], "CACHE_RESTORED")
             self.assertEqual(row["output_state"], "RESTORED")
+            self.assertFalse(row["action_executed"])
+            self.assertIsNone(row["started_at"])
+            self.assertIsNone(row["finished_at"])
+            restored_step = json.loads(
+                (root / "build/item/.cad-ci/steps/build.json").read_text()
+            )
+            self.assertIsNone(restored_step["started_at"])
+            self.assertIsNone(restored_step["finished_at"])
             self.assertTrue((generated / "empty").is_dir())
 
     def test_reuse_false_executes_again(self):
@@ -673,7 +690,7 @@ out.mkdir(parents=True, exist_ok=True)
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             self.make_simple_repo(root)
-            self.run_selected(root, {"item"})
+            cold = self.run_selected(root, {"item"})
 
             self.assertTrue((root / REPORT_PATH).is_file())
             self.assertTrue(
@@ -687,16 +704,49 @@ out.mkdir(parents=True, exist_ok=True)
             )
 
             report = json.loads((root / REPORT_PATH).read_text())
-            self.assertEqual(report["schema_version"], 2)
+            self.assertEqual(report["schema_version"], 3)
+            self.assertRegex(report["started_at"], UTC_TIMESTAMP)
+            self.assertRegex(report["finished_at"], UTC_TIMESTAMP)
+            self.assertLessEqual(report["started_at"], report["finished_at"])
             self.assertIn("output_state", report["targets"][0])
             self.assertNotIn("materialization", report["targets"][0])
 
-            step = json.loads(
-                (root / "build/item/.cad-ci/steps/build.json").read_text()
-            )
-            self.assertEqual(step["schema"], 2)
+            built = _rows(cold)["item:build"]
+            self.assertTrue(built["action_executed"])
+            self.assertRegex(built["started_at"], UTC_TIMESTAMP)
+            self.assertRegex(built["finished_at"], UTC_TIMESTAMP)
+            self.assertLessEqual(built["started_at"], built["finished_at"])
+            self.assertIsNotNone(built["duration_seconds"])
+
+            step_path = root / "build/item/.cad-ci/steps/build.json"
+            step = json.loads(step_path.read_text())
+            self.assertEqual(step["schema"], 3)
+            self.assertEqual(step["run_started_at"], report["started_at"])
+            self.assertEqual(step["run_finished_at"], report["finished_at"])
+            self.assertEqual(step["started_at"], built["started_at"])
+            self.assertEqual(step["finished_at"], built["finished_at"])
             self.assertIn("output_state", step)
             self.assertNotIn("materialization", step)
+
+            item = json.loads(
+                (root / "build/item/.cad-ci/item.json").read_text()
+            )
+            self.assertEqual(item["schema"], 2)
+            self.assertEqual(item["run_started_at"], report["started_at"])
+            self.assertEqual(item["run_finished_at"], report["finished_at"])
+
+            current = self.run_selected(root, {"item"})
+            current_row = _rows(current)["item:build"]
+            self.assertEqual(current_row["outcome"], "CURRENT")
+            self.assertFalse(current_row["action_executed"])
+            self.assertIsNone(current_row["started_at"])
+            self.assertIsNone(current_row["finished_at"])
+
+            current_step = json.loads(step_path.read_text())
+            self.assertIsNone(current_step["started_at"])
+            self.assertIsNone(current_step["finished_at"])
+            self.assertRegex(current_step["run_started_at"], UTC_TIMESTAMP)
+            self.assertRegex(current_step["run_finished_at"], UTC_TIMESTAMP)
 
             self.assertFalse(
                 (root / "build/item/.cache").exists()

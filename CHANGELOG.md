@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.7.0
+
+- add UTC run timestamps to private reports and publishable step/item evidence;
+- add consumer-command `started_at`/`finished_at` only when an action actually executes, leaving CURRENT/CACHE_RESTORED action timestamps null;
+- preserve existing monotonic `duration_seconds` semantics;
+- bump run-report, step-evidence and item-evidence schemas for the added timing fields;
+- adopt released `tool.py.lib.ci` 0.1.5 for this repository's own CI and expose its change scope to suppress release work for documentation-only main pushes.
+
 ## 0.6.0
 
 - add optional item-level `process` selection, defaulting to `true`;

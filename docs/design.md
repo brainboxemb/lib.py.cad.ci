@@ -82,3 +82,21 @@ not maintain a second fingerprint or cache-decision mechanism.
 A generic behavior change is completed here first, then released. Only an exact
 released library revision is adopted by `tool.cad.ci`; that tool revision is
 then exercised by `tool.cad.ci.test` before consumer repositories migrate.
+
+
+## Evidence timestamps
+
+Run timing is evidence only.
+
+`run_scons()` records one UTC run start before invoking SCons. Report generation
+records the UTC run finish after target classification and output
+materialization. Those values are copied into publishable item and step
+evidence.
+
+The SCons driver records consumer-command `started_at` immediately before
+`subprocess.run()` and `finished_at` immediately after the command returns or
+raises. Preparation/materialization before the command is not assigned a step
+start timestamp.
+
+Existing monotonic `duration_seconds` semantics remain unchanged and are not
+derived from wall-clock timestamps.

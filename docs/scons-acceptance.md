@@ -615,3 +615,35 @@ The SCons engine may be released only when:
 7. `tool.cad.ci.test` passes against that exact tool revision.
 
 Only after all seven conditions are true may Forge or CAD migration resume.
+
+
+## Timing evidence acceptance
+
+For a cold successful run:
+
+- report has non-null `started_at` and `finished_at`;
+- each BUILT row has non-null action `started_at` and `finished_at`;
+- each public step evidence file has the same action timestamps plus run-level
+  `run_started_at` / `run_finished_at`;
+- complete item evidence has the same run-level timestamps;
+- every timestamp matches the documented UTC `...Z` format;
+- `duration_seconds` remains present.
+
+For a second unchanged run:
+
+- CURRENT rows have `started_at: null` and `finished_at: null`;
+- public step evidence also has null action timestamps;
+- run-level timestamps are still present and describe the new run.
+
+For a fresh CacheDir restore:
+
+- CACHE_RESTORED rows and public step evidence have null action timestamps;
+- run-level timestamps are present.
+
+For timeout or command failure after consumer-command execution:
+
+- action start and finish timestamps are present.
+
+For a materialization/setup failure before consumer-command execution:
+
+- action start and finish timestamps are null.
