@@ -23,7 +23,7 @@ that no longer exists in current processed configuration.
 
 ## Current goal
 
-Complete #65 and release 0.8.4.
+Complete the #65 release correction and publish 0.8.4. The implementation is merged; the first main release job correctly skipped because `VERSION` was not updated alongside `pyproject.toml`.
 
 A partial main update must preserve unselected current items, replace selected
 current items and remove durable state for items that are no longer part of the
