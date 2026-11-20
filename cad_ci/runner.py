@@ -35,6 +35,7 @@ def run_repository(
     step: str | None = None,
     start: str | None = None,
     until: str | None = None,
+    jobs: int = 1,
 ) -> dict:
     """Execute one repository selection through a single SCons invocation.
 
@@ -56,6 +57,6 @@ def run_repository(
             start=start,
             until=until,
         )
-        return run_scons(repo, items, request)
+        return run_scons(repo, items, request, jobs=jobs)
     except SConsRunError as exc:
         raise RunError(str(exc), report=exc.report) from exc
