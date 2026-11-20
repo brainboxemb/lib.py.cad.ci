@@ -104,7 +104,7 @@ def write_item(root: Path, item: Item, value: str) -> None:
     evidence = folder / ".cad-ci" / "item.json"
     evidence.parent.mkdir(parents=True)
     evidence.write_text(json.dumps({
-        "schema": 1,
+        "schema": 2,
         "engine": "scons",
         "engine_schema": 1,
         "item": item.id,

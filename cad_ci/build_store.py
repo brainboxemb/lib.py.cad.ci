@@ -24,7 +24,8 @@ from .model import Item
 MANIFEST = "build.json"
 ITEM_STATE = Path(".cad-ci/item.json")
 BUILD_SCHEMA = 1
-EVIDENCE_SCHEMA = 1
+CURRENT_EVIDENCE_SCHEMA = 2
+READABLE_STORED_EVIDENCE_SCHEMAS = frozenset({1, 2})
 ENGINE = "scons"
 ENGINE_SCHEMA = 1
 
@@ -116,9 +117,10 @@ def _item_record(
         )
 
     evidence = _read_json(item_root / ITEM_STATE)
-    if evidence.get("schema") != EVIDENCE_SCHEMA:
+    if evidence.get("schema") != CURRENT_EVIDENCE_SCHEMA:
         raise BuildStoreError(
-            f"unsupported item evidence schema: {item_path.as_posix()}"
+            f"unsupported current item evidence schema: "
+            f"{item_path.as_posix()}"
         )
     if evidence.get("engine") != ENGINE:
         raise BuildStoreError(
@@ -340,9 +342,9 @@ def _validate_stored_row(
         )
 
     evidence = _read_json(root / safe_path / ITEM_STATE)
-    if evidence.get("schema") != EVIDENCE_SCHEMA:
+    if evidence.get("schema") not in READABLE_STORED_EVIDENCE_SCHEMAS:
         raise BuildStoreError(
-            f"unsupported item evidence schema: {item_path}"
+            f"unsupported stored item evidence schema: {item_path}"
         )
     if (
         evidence.get("engine") != row.get("engine")

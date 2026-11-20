@@ -100,3 +100,24 @@ start timestamp.
 
 Existing monotonic `duration_seconds` semantics remain unchanged and are not
 derived from wall-clock timestamps.
+
+
+## Durable item-evidence schema compatibility
+
+Build-store validation distinguishes two contexts:
+
+- candidate validation: require the current item evidence schema exactly;
+- stored durable-state validation: accept the explicitly supported readable
+  schema set.
+
+For library 0.7.x:
+
+```text
+current candidate schema: 2
+readable stored schemas: 1, 2
+```
+
+This permits a gradual durable-build migration: unaffected items may remain on
+legacy schema 1 while newly produced/replaced items use schema 2.
+
+Build manifest schema remains unchanged.
