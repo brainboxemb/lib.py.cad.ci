@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.6.0
+
+- add optional item-level `process` selection, defaulting to `true`;
+- exclude `process: false` items from changed-path selection, dependency fan-out, full runs and SCons target generation;
+- reject explicit execution of non-processed items and processed dependencies on non-processed items;
+- preserve existing SCons rebuild/cache semantics for processed items.
+
 ## 0.5.0
 
 - add validated repository-wide `variables` in root `cad-ci.yml`;
