@@ -470,3 +470,124 @@ Unknown item evidence schemas remain invalid.
 
 This compatibility applies only to stored durable state. A newly prepared
 candidate from the current library must not silently accept an obsolete schema.
+
+
+## 22. Local nested item configuration
+
+Nested items must not need to repeat their complete repository path in every
+`watch` and step `inputs` field.
+
+### Scoped source paths
+
+The existing list form remains repository-relative for backward compatibility:
+
+```yaml
+watch:
+  - examples/attach-angle/scpf/**
+  - scripts/model_verify.py
+```
+
+A mapping form may express item-local and repository-wide patterns explicitly:
+
+```yaml
+watch:
+  item:
+    - scpf/**
+    - verification/**
+  repo:
+    - scripts/model_verify.py
+```
+
+The same two forms apply to step `inputs`.
+
+Rules:
+
+- `item` patterns are relative to the directory containing the consumer
+  item's `ci.yml`;
+- `repo` patterns are relative to the repository root;
+- both groups may be present in one mapping;
+- after configuration loading, both groups are normalized to the existing
+  repository-relative internal representation;
+- absolute paths, `..` escapes and generated-root paths remain invalid;
+- output paths keep their existing item-output-relative semantics.
+
+For a template, `item` paths are resolved relative to the consuming item, not
+relative to root `cad-ci.yml`.
+
+### Root item templates
+
+Root `cad-ci.yml` may define repository-owned named item templates:
+
+```yaml
+templates:
+  reference-build123d:
+    kind: reference
+    watch:
+      item:
+        - "**"
+      repo:
+        - verification/reference_validation.py
+    strategy:
+      reuse: true
+    steps:
+      - id: verify
+        inputs:
+          item:
+            - model.py
+          repo:
+            - verification/reference_validation.py
+        run: [python, ../../../verification/reference_validation.py]
+        outputs:
+          - reference
+```
+
+A consumer item may select at most one template:
+
+```yaml
+template: reference-build123d
+```
+
+Template names and contents are consumer-owned. Generic CAD-CI assigns no
+meaning to template names or to model/reference tool names.
+
+The selected template is the base item mapping. The local `ci.yml` is merged
+over it.
+
+Merge rules are intentionally small:
+
+- mapping + mapping: merge recursively;
+- local scalar/list/null replaces the template value;
+- local item configuration always wins;
+- templates do not inherit other templates;
+- templates may not define `id`, `template` or `templates`.
+
+Template expansion happens only during configuration loading and does not add
+source hashing, freshness checks or rebuild/cache decisions.
+
+### Nested implicit IDs
+
+An explicit `id` remains supported and unchanged.
+
+When `id` is omitted, the default item ID is derived from the
+repository-relative item source path by replacing `/` with `-`.
+
+Examples:
+
+```text
+examples/simple-box                 -> examples-simple-box
+examples/attach-angle/build123d    -> examples-attach-angle-build123d
+```
+
+Existing flat paths without `/` keep their previous implicit ID.
+
+If two source paths normalize to the same ID, configuration loading fails with
+a duplicate-ID error; CAD-CI does not silently rename either item.
+
+### Hosted-runner behavior
+
+These configuration features do not change selection/execution ownership.
+
+After loading, planner and SCons receive the same normalized Item/Step model as
+before. On a fresh hosted runner, Git changed-file selection still decides which
+items are requested and selected items are cold unless real SCons state/cache is
+present.
