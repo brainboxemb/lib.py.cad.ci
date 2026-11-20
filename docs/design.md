@@ -121,3 +121,94 @@ This permits a gradual durable-build migration: unaffected items may remain on
 legacy schema 1 while newly produced/replaced items use schema 2.
 
 Build manifest schema remains unchanged.
+
+
+## Item-root configuration composition
+
+The loader converts concise consumer YAML into the same immutable `Item` and
+`Step` model consumed by the existing planner and SCons engine.
+
+### Path normalization boundary
+
+Legacy list fields remain repository-relative:
+
+```yaml
+watch: [examples/a/**, shared/**]
+```
+
+New mapping fields make scope explicit:
+
+```yaml
+watch:
+  item: [scpf/**, tests/**]
+  repo: [scripts/shared_check.py]
+```
+
+For an item at `examples/a/ci.yml`, the loader normalizes the latter to:
+
+```text
+examples/a/scpf/**
+examples/a/tests/**
+scripts/shared_check.py
+```
+
+The planner and SCons engine therefore continue to receive only normalized
+repository-relative patterns. They do not need to understand templates,
+ancestors or item-relative syntax.
+
+### Template table
+
+The root `cad-ci.yml` owns an optional `templates` mapping. Each value is a
+partial item configuration. Template validation is generic and rejects
+composition-control fields that would make expansion recursive or ambiguous.
+
+One effective template name is selected after ancestor/local composition.
+Templates do not inherit other templates.
+
+### Ancestor defaults
+
+For a discovered item at `a/b/c/ci.yml`, the loader checks existing ancestor
+files in this order:
+
+```text
+a/ci.yml
+a/b/ci.yml
+```
+
+Only their `children` mapping participates. Their own item fields do not leak
+into descendants.
+
+Composition uses a small recursive mapping merge:
+
+- mapping + mapping: recursively merge keys;
+- scalar/list/null in the later layer: replace the earlier value;
+- local item is always the final layer.
+
+This keeps override behavior deterministic and inspectable without inventing
+field-specific merge rules.
+
+### Identity
+
+The source path remains the durable storage key.
+
+If an item omits `id`, its default ID is the repository-relative item path
+with separators replaced by dashes. Flat item defaults therefore remain
+unchanged; previously-invalid nested implicit IDs become usable.
+
+### Performance and rebuild boundary
+
+Template/ancestor expansion happens once in `load_repository()` and is only
+mapping/path work. It does not resolve source file contents or inspect SCons
+state.
+
+After expansion:
+
+```text
+concise YAML
+  -> effective mapping
+  -> normalized Item/Step
+  -> existing Git planner
+  -> existing SCons target graph
+```
+
+No new fingerprint, cache or changed-file engine is introduced.
