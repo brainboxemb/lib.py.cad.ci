@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.9.0
+
+- add explicit bounded SCons parallelism through a positive `jobs` execution option while preserving `jobs=1` as the compatibility default;
+- materialize direct dependencies into target-private runtime snapshots so independent consumers of one shared dependency can execute concurrently without racing on public build output;
+- keep previous-step item materialization, SCons dependency ordering, CacheDir behavior and post-run public output semantics unchanged;
+- record the requested job count in the private run report without making it part of target signatures;
+- bump the SCons engine/report schemas for the new action-time dependency context semantics;
+- prove two parallel consumers safely overlap, retain stable dependency bytes and restore missing public dependency output from immutable bundles.
+
 ## 0.8.4
 
 - remove durable main rows and owned bytes for items no longer present in explicit current processed configuration;

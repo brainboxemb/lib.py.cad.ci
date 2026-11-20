@@ -30,8 +30,7 @@ multiple consumers of one dependency can currently restore the same shared
 
 ## Current goal
 
-Complete #69: support explicit bounded parallel SCons execution without shared
-dependency-materialization races.
+Complete #69 and release the proven bounded parallel SCons execution as 0.9.0.
 
 Default remains `jobs=1`. Parallelism is opt-in until the released tool
 explicitly exposes the setting.
@@ -64,7 +63,7 @@ output remains post-run materialized exactly as today.
 2. Extend acceptance before implementation.
 3. Implement target-private dependency snapshots and explicit jobs.
 4. Run complete library tests, including a parallel shared-dependency proof.
-5. Release the library.
+5. Release lib.py.cad.ci 0.9.0 from the exact green merge commit.
 6. Pin/expose the release in `tool.cad.ci` as a thin `--jobs`/workflow input.
 7. Pass `tool.cad.ci.test` black-box parallel acceptance.
 8. Adopt bounded jobs in Forge and remeasure the 10-case reference graph.
