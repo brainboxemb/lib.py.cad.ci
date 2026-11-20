@@ -7,62 +7,58 @@ issues contain detail and history.
 
 ## Current status
 
-`lib.py.cad.ci 0.8.1` is released at exact commit
-`ab701bf9ef46892040f4593a74b16805b7187bea`.
+`lib.py.cad.ci 0.8.2` is released and is consumed by the current
+`tool.cad.ci 0.13.2` Forge pilot stack.
 
-Exact released `tool.cad.ci 0.13.1` consumes that library and has passed the
-complete black-box suite in `tool.cad.ci.test`.
+The Git-selected cold-run architecture and nested-item configuration/publication
+work are complete in the released stack.
 
-The first real Forge nested-item pilot proved execution successfully:
+A real Forge run exposed an observability defect in the SCons adapter:
 
-- parent model item passed;
-- four nested reference child items passed independently;
-- the remaining aggregate reference item passed.
-
-Durable PR publication then exposed one generic build-store assumption:
-item source paths were treated as non-overlapping directory ownership.
+- SCons stdout is captured until the complete run exits;
+- GitHub therefore shows a long silent interval and then assigns nearly the same
+  timestamp to output produced throughout the run;
+- SCons prints the internal Python action representation
+  `_execute_bundle(targets, sources, ...)`, including long source lists.
 
 ## Current goal
 
-Complete #61: make durable build ownership safe for nested item paths.
+Complete #63 without changing execution semantics.
 
-For:
+Required operator output:
 
 ```text
-parent item: examples/attach-angle
-child item:  examples/attach-angle/build123d
+CAD CI run: <item>:<step>
+<consumer command output, live>
+...
+SCons: targets=...
 ```
 
-the parent owns only its declared outputs plus its `.cad-ci/` evidence.
-It does not own the complete subtree below `examples/attach-angle`.
+The internal `_execute_bundle(...)` representation and source-list dump must
+not be printed.
 
-## Required behavior
+## Required proof
 
-- new manifest rows record declared item output paths;
-- prepare-main and prepare-pr copy only item-owned outputs/evidence;
-- update-main replaces only selected item-owned outputs/evidence;
-- resolve/promote use stored ownership metadata and preserve nested siblings;
-- legacy non-nested schema-1 rows without ownership metadata remain readable;
-- ambiguous legacy nested replacement fails instead of deleting sibling data;
-- configuration rejects a parent output path that overlaps a nested item root;
-- SCons/planner behavior is unchanged.
+- SCons subprocess output is inherited/streamed instead of captured and replayed;
+- a slow consumer command can expose an early flushed line before it exits;
+- executed targets use a concise logical action label;
+- no `_execute_bundle(` action dump appears;
+- all existing SCons and library tests remain green;
+- no selection, target signature, cache, dependency or publication behavior
+  changes.
 
 ## Execution order
 
-1. Define ownership and compatibility semantics in requirements/design.
-2. Add nested durable-store acceptance cases.
-3. Implement exact owned-path copy/replace helpers.
-4. Add repository config validation for output/item-root overlap.
-5. Run the complete library suite.
-6. Release the library patch.
-7. Pin/release tool.cad.ci to the exact library patch.
-8. Externally accept nested durable publication in tool.cad.ci.test.
-9. Resume Forge PR #499 only after that exact stack is green.
+1. Define logging behavior in requirements/design.
+2. Add logging acceptance.
+3. Stream SCons output and give the Python action a concise display label.
+4. Run the complete library suite.
+5. Release the patch.
+6. Pin/release `tool.cad.ci` and run external acceptance.
+7. Only then update the Forge consumer pin.
 
 ## Open issue assessment — 2026-11-20
 
 | Issue | Status | Assessment |
 | --- | --- | --- |
-| #61 Make durable build store ownership-safe for nested item paths | now | Required generic publication fix exposed by the real Forge nested-item pilot. |
-
-Forge PR #499 remains draft/blocked until this chain is complete.
+| #63 Stream CAD-CI execution output and suppress internal SCons action dumps | now | Real Forge logs are temporally misleading and expose internal SCons implementation details. |
