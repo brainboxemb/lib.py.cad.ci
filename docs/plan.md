@@ -13,45 +13,57 @@ issues contain detail and history.
 Repository package CI uses exact released `tool.py.lib.ci 0.1.5` commit
 `d189d0718659ca3927f1dddbe373c1c788b11b6c`.
 
-The release job consumes the reusable `change_scope` output and must not run
-for a documentation-only main push.
+The execution engine already provides changed-item selection, SCons target
+signatures/reuse and partial durable build updates. The missing piece exposed by
+Forge is configuration composition: nested mini-projects currently have to
+repeat repository-root paths and complete step definitions.
 
 ## Current goal
 
-Complete #46 with one pure documentation-only acceptance change.
+Complete #54: make nested CI items local and reusable without changing the
+planner, SCons rebuild decisions or durable-build semantics.
 
-This branch deliberately changes only `docs/plan.md`. The CI runs themselves
-are the proof.
+The configuration loader will add:
+
+1. item-root-relative path groups alongside the existing repository-relative
+   list form;
+2. repository-owned named item templates;
+3. deterministic ancestor `children` defaults for nested items.
+
+All composition is resolved once during configuration loading. The resulting
+`Item` and `Step` objects keep repository-relative normalized paths, so the
+existing planner/SCons engine does not gain a second selection or cache layer.
 
 ## Required proof
 
-On this pull request:
+- existing schema-1 repository-relative list configuration remains valid;
+- item-local watch/input patterns normalize to repository-relative paths;
+- explicit repo-wide patterns remain possible in the same config;
+- a named template can provide standard item/step configuration;
+- ancestor `children` defaults merge from repository root toward the item,
+  with the local item taking final precedence;
+- nested sibling items remain independently selected;
+- changing one sibling does not select the other without an explicit shared
+  watch/dependency;
+- existing planner, SCons and build-store tests remain green;
+- configuration composition performs no source hashing and no rebuild/cache
+  decision of its own.
 
-- change scope is `docs-only`;
-- setup-python is skipped;
-- wheel build/install/tests are skipped;
-- the normal required test check succeeds.
+## Execution order
 
-After squash merge to main:
-
-- push change scope is also `docs-only`;
-- setup-python and package validation remain skipped;
-- the repository `release` job is skipped via
-  `needs.test.outputs.change_scope`;
-- no release/publication work is performed.
+1. #54 requirements/design and configuration syntax.
+2. #54 loader/model tests.
+3. Run the complete library test suite.
+4. Release the library.
+5. Update/release `tool.cad.ci` to the exact library revision.
+6. Prove the exact stack in `tool.cad.ci.test`.
+7. Migrate one Forge model plus isolated reference items.
+8. Only after that proof, migrate the remaining active Forge models.
 
 ## Open issue assessment — 2026-11-20
 
 | Issue | Status | Assessment |
 | --- | --- | --- |
-| #46 Avoid full library test run for documentation-only changes | now | Final real-consumer proof of both pull-request and post-merge main behavior using released tool.py.lib.ci 0.1.5. |
+| #54 Add item-root-relative paths and inherited CI templates | now | Required to make nested model/reference mini-projects maintainable while preserving the already-proven selection/SCons/publication behavior. |
 
 No other open issues exist in this repository snapshot.
-
-## Released state
-
-CAD-CI timing evidence and build-store schema compatibility are released in
-v0.7.1. Released `tool.cad.ci 0.12.1` pins this exact library revision.
-
-After #46 is proven and merged, this repository has no unfinished issue in the
-current CI-acceleration chain.
