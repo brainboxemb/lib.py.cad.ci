@@ -7,33 +7,39 @@ issues contain detail and history.
 
 ## Current goal
 
-Complete #44 by bringing this plan in sync with the published 0.6.0 release.
+Complete #47: adopt exact released `tool.py.lib.ci 0.1.4` for this
+repository's own Python-library CI.
 
-The item-level `process` behavior from #39 is complete and released as
-`v0.6.0`. No product, requirement, design or implementation change is part of
-this work.
+This is repository-maintenance work only. The CAD-CI product remains released
+as v0.6.0 and its `process` behavior is already adopted downstream by
+`tool.cad.ci`, `tool.cad.ci.test` and Forge.
 
 ## Execution order
 
-1. Record the actual post-0.6.0 repository state.
-2. Confirm the complete open issue list.
-3. Merge this plan-only correction and close #44.
-4. Leave #40 deferred while the released 0.6.0 stack is adopted by
-   `tool.cad.ci`, `tool.cad.ci.test` and Forge.
+1. Pin exact `tool.py.lib.ci 0.1.4` commit
+   `81461fa4b61c90b91b0427ce3e99a493c2dc2e78`.
+2. Run the normal full package CI because the workflow configuration changes.
+3. Merge #47 only after green CI.
+4. Then use #46 for a separate docs-only PR and verify:
+   - classification selects the docs-only path;
+   - setup-python is skipped;
+   - package build/install/test is skipped;
+   - the required check still succeeds;
+   - the explicit skip reason is visible.
+5. Leave #40 separate.
 
 ## Open issue assessment — 2026-11-20
 
 | Issue | Status | Assessment |
 | --- | --- | --- |
-| #44 Update repository plan after 0.6.0 release | now | Plan-only correction required after the successful v0.6.0 release. |
-| #40 Add timestamps to CAD-CI run and step evidence | later | Separate observability improvement; keep it outside the current process-selection adoption chain. |
-| #46 Avoid full library test run for documentation-only changes | blocked | Concrete consumer need is recorded here, but the generic solution belongs in tool.py.lib.ci #11. Adopt only after that tool behavior is released and externally tested. |
+| #47 Adopt tool.py.lib.ci 0.1.4 for repository CI | now | Required consumer adoption before the real docs-only proof. |
+| #46 Avoid full library test run for documentation-only changes | next | Generic implementation is released and externally accepted; prove the actual cheap path after #47 merges. |
+| #40 Add timestamps to CAD-CI run and step evidence | later | Separate CAD-CI observability work; do not mix it with repository-CI maintenance. |
 
 ## Released state
 
 `lib.py.cad.ci 0.6.0` is published from commit
 `dac8c5b5e1147a401730fda31f9bf9de2278c4ee`.
 
-The next work for the released `process` behavior is outside this repository:
-`tool.cad.ci` must pin this exact released library revision, then
-`tool.cad.ci.test` must prove the released stack before Forge consumes it.
+The process-selection stack is already adopted downstream. Current maintenance
+does not change that released product contract.
