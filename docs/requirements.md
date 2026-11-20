@@ -508,11 +508,34 @@ Rules:
 - both groups may be present in one mapping;
 - after configuration loading, both groups are normalized to the existing
   repository-relative internal representation;
-- absolute paths, `..` escapes and generated-root paths remain invalid;
+- legacy list syntax and explicit `repo:` patterns reject every `..` segment;
+- explicit `item:` patterns may use `..` parent traversal when lexical
+  normalization against the consuming item root remains inside the repository;
+- item-relative traversal that would escape above the repository root is
+  invalid;
+- all normalized source patterns reject generated roots `.git/`, `.cache/`
+  and `build/`;
 - output paths keep their existing item-output-relative semantics.
 
 For a template, `item` paths are resolved relative to the consuming item, not
 relative to root `cad-ci.yml`.
+
+For example, from `examples/attach-angle/build123d/ci.yml`:
+
+```yaml
+watch:
+  item:
+    - ../verification/reference_geometry.json
+```
+
+normalizes to:
+
+```text
+examples/attach-angle/verification/reference_geometry.json
+```
+
+This is path normalization only; it does not make the parent directory another
+CI dependency/item.
 
 ### Root item templates
 
