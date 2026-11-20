@@ -331,3 +331,68 @@ post-run report.
 Consumer subprocesses continue to inherit the SCons process streams, so their
 flushed stdout/stderr remains live. The final report/summary is still generated
 after SCons exits.
+
+
+## Removed-item cleanup during partial main updates
+
+`update_main()` receives two item collections with different meanings:
+
+```text
+selected items
+  -> validated candidate replacements
+
+current processed items
+  -> authoritative membership of the next complete main baseline
+```
+
+The library computes:
+
+```text
+previous rows - current paths = removed rows
+current paths - (previous current rows + selected replacements) = missing rows
+```
+
+A non-empty missing-row set is an error. A removed-row set is cleanup work.
+
+Before copying/mutating the output scope, the library validates:
+
+1. every selected replacement candidate;
+2. that every selected item is part of current processed configuration;
+3. that the resulting row set can be complete;
+4. that every removed legacy row has unambiguous ownership.
+
+After validation it copies the previous main scope, removes each removed item's
+owned paths, replaces each selected item's owned paths and writes a manifest
+whose item keys exactly equal current processed item paths.
+
+### Removed rows with ownership metadata
+
+For a stored row with `outputs`, removal deletes:
+
+```text
+<item>/<declared output>...
+<item>/.cad-ci/
+```
+
+It then prunes only empty directories up to the durable scope root. Nested
+current child/parent content therefore keeps the containing directory alive.
+
+### Legacy removed rows
+
+A stored row without `outputs` has historical whole-tree ownership only when
+its item path is not nested with another previous or current durable item path.
+In that non-nested case the complete item directory may be removed.
+
+If the legacy row is nested with another item path, removal fails before output
+mutation. The library never guesses which bytes inside an ambiguous legacy
+nested tree belong to the removed item.
+
+### CLI boundary
+
+The thin CLI already loads current repository configuration to compute affected
+items. For main updates it passes both:
+
+- the affected current items as replacements;
+- all currently processed items as baseline membership.
+
+Deletion semantics remain entirely in `lib.py.cad.ci`.

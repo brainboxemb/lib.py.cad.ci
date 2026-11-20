@@ -301,6 +301,109 @@ class BuildStoreTests(unittest.TestCase):
                 "main-new",
             )
 
+    def test_update_main_removes_item_absent_from_current_configuration(self):
+        """A removed configured item disappears without rebuilding survivors."""
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            main = root / "main"
+            write_main(
+                main,
+                [
+                    (self.item_a, "old-a"),
+                    (self.item_b, "old-b"),
+                ],
+            )
+            survivor_before = (
+                main / "cases/item-b/result.txt"
+            ).read_bytes()
+
+            updated = root / "updated"
+            manifest = update_main(
+                main=main,
+                candidate_root=root / "candidate",
+                out=updated,
+                items=[],
+                current_items=[self.item_b],
+                source_commit="main-new",
+            )
+
+            self.assertFalse((updated / "cases/item-a").exists())
+            self.assertEqual(
+                (updated / "cases/item-b/result.txt").read_bytes(),
+                survivor_before,
+            )
+            self.assertEqual(
+                set(manifest["items"]),
+                {"cases/item-b"},
+            )
+            self.assertEqual(manifest["source_commit"], "main-new")
+
+    def test_update_main_replaces_selected_and_removes_deleted(self):
+        """Replacement and deletion happen in one validated main update."""
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            main = root / "main"
+            write_main(
+                main,
+                [
+                    (self.item_a, "old-a"),
+                    (self.item_b, "old-b"),
+                ],
+            )
+            candidate = root / "candidate"
+            write_item(candidate, self.item_a, "new-a")
+
+            updated = root / "updated"
+            manifest = update_main(
+                main=main,
+                candidate_root=candidate,
+                out=updated,
+                items=[self.item_a],
+                current_items=[self.item_a],
+                source_commit="main-new",
+            )
+
+            self.assertEqual(
+                (updated / "cases/item-a/result.txt").read_text(),
+                "new-a",
+            )
+            self.assertFalse((updated / "cases/item-b").exists())
+            self.assertEqual(
+                set(manifest["items"]),
+                {"cases/item-a"},
+            )
+
+    def test_update_main_requires_complete_current_baseline(self):
+        """A current unselected item needs either baseline or replacement."""
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            main = root / "main"
+            write_main(main, [(self.item_a, "old-a")])
+            out = root / "updated"
+            out.mkdir()
+            (out / "sentinel.txt").write_text("untouched", encoding="utf-8")
+
+            with self.assertRaisesRegex(
+                BuildStoreError,
+                "current main item has no baseline or replacement",
+            ):
+                update_main(
+                    main=main,
+                    candidate_root=root / "candidate",
+                    out=out,
+                    items=[],
+                    current_items=[self.item_a, self.item_b],
+                    source_commit="main-new",
+                )
+
+            self.assertEqual(
+                (out / "sentinel.txt").read_text(),
+                "untouched",
+            )
+
     def test_update_main_validates_all_replacements_before_writing(self):
         """A missing selected result leaves the existing output untouched."""
 
@@ -670,6 +773,99 @@ class BuildStoreTests(unittest.TestCase):
                     / "cases/model/reference/result.txt"
                 ).read_text(),
                 "child-new",
+            )
+
+    def test_update_main_removed_parent_preserves_current_nested_child(self):
+        """Removing a parent item deletes only parent-owned durable paths."""
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            parent = configured_item("cases/model", "parent")
+            child = configured_item("cases/model/reference", "child")
+            main = root / "main"
+            write_main(
+                main,
+                [(parent, "parent-old"), (child, "child-old")],
+            )
+            child_result = (
+                main / "cases/model/reference/result.txt"
+            ).read_bytes()
+            child_evidence = (
+                main
+                / "cases/model/reference/.cad-ci/item.json"
+            ).read_bytes()
+
+            updated = root / "updated"
+            manifest = update_main(
+                main=main,
+                candidate_root=root / "candidate",
+                out=updated,
+                items=[],
+                current_items=[child],
+                source_commit="main-new",
+            )
+
+            self.assertFalse(
+                (updated / "cases/model/result.txt").exists()
+            )
+            self.assertFalse(
+                (updated / "cases/model/.cad-ci").exists()
+            )
+            self.assertEqual(
+                (
+                    updated / "cases/model/reference/result.txt"
+                ).read_bytes(),
+                child_result,
+            )
+            self.assertEqual(
+                (
+                    updated
+                    / "cases/model/reference/.cad-ci/item.json"
+                ).read_bytes(),
+                child_evidence,
+            )
+            self.assertEqual(
+                set(manifest["items"]),
+                {"cases/model/reference"},
+            )
+
+    def test_update_main_rejects_ambiguous_legacy_nested_removal(self):
+        """Legacy nested ownership is rejected before output mutation."""
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            parent = configured_item("cases/model", "parent")
+            child = configured_item("cases/model/reference", "child")
+            main = root / "main"
+            write_main(
+                main,
+                [(parent, "parent-old"), (child, "child-old")],
+            )
+            manifest_path = main / "build.json"
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            manifest["items"]["cases/model"].pop("outputs")
+            manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+
+            out = root / "updated"
+            out.mkdir()
+            (out / "sentinel.txt").write_text("untouched", encoding="utf-8")
+
+            with self.assertRaisesRegex(
+                BuildStoreError,
+                "legacy item ownership is ambiguous in nested layout",
+            ):
+                update_main(
+                    main=main,
+                    candidate_root=root / "candidate",
+                    out=out,
+                    items=[],
+                    current_items=[child],
+                    source_commit="main-new",
+                )
+
+            self.assertEqual(
+                (out / "sentinel.txt").read_text(),
+                "untouched",
             )
 
     def test_nested_resolve_and_promote_preserve_child(self):

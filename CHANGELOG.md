@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.8.4
+
+- remove durable main rows and owned bytes for items no longer present in explicit current processed configuration;
+- preserve unselected current items and selected replacement semantics during partial main updates;
+- keep nested parent/child ownership safe during removal and reject ambiguous legacy nested deletion;
+- make current-configuration membership explicit rather than inferring deletion from sparse candidate absence.
+
 ## 0.8.3
 
 - stream SCons and consumer-command output live instead of buffering the complete run;
