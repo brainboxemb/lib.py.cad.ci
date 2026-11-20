@@ -10,13 +10,13 @@ permissions:
 
 jobs:
   test:
-    uses: brainboxemb/tool.py.lib.ci/.github/workflows/reusable-ci.yml@81461fa4b61c90b91b0427ce3e99a493c2dc2e78
+    uses: brainboxemb/tool.py.lib.ci/.github/workflows/reusable-ci.yml@d189d0718659ca3927f1dddbe373c1c788b11b6c
     with:
       python_version: "3.12"
 
   release:
     needs: test
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && needs.test.outputs.change_scope != 'docs-only'
     permissions:
       contents: write
     runs-on: ubuntu-latest
