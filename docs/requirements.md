@@ -681,3 +681,21 @@ For parent item `a` and child item `a/child`, parent output paths such as
 
 This validation is configuration-only. It does not add file hashing, Git
 selection or another rebuild engine.
+
+
+## 24. Operator execution output
+
+Execution logging must remain useful on a long-running hosted CI job.
+
+- stdout/stderr produced while SCons and consumer commands run must be forwarded
+  to the caller as the work happens; CAD-CI must not buffer the complete SCons
+  process and replay it only after exit;
+- before an executed CAD-CI target action, SCons displays a short logical label
+  containing the item/step key;
+- internal Python action names, target bundle paths and complete resolved source
+  lists are implementation detail and must not be used as the normal action
+  display line;
+- consumer command output remains visible;
+- the final structured CAD-CI summary remains the authoritative concise result;
+- changing logging must not alter target signatures, dependency ordering,
+  selection, CacheDir behavior, output bundles or evidence.
