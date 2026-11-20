@@ -16,6 +16,7 @@ from unittest.mock import patch
 from cad_ci.config import load_repository
 from cad_ci.scons_engine import (
     CACHE_ROOT,
+    DEPENDENCY_RUN_ROOT,
     REPORT_PATH,
     RUN_ROOT,
     STATE_ROOT,
@@ -59,12 +60,13 @@ class SConsEngineTests(unittest.TestCase):
         **request_kwargs,
     ) -> dict:
         items = load_repository(root)
+        jobs = request_kwargs.pop("jobs", 1)
         request = resolve_request(
             items,
             selected,
             **request_kwargs,
         )
-        return run_scons(root, items, request)
+        return run_scons(root, items, request, jobs=jobs)
 
     def make_simple_repo(self, root: Path) -> None:
         _write(
@@ -128,6 +130,7 @@ assert (out / "build.json").read_text()
             self.make_simple_repo(root)
 
             cold = self.run_selected(root, {"item"})
+            self.assertEqual(cold["jobs"], 1)
             self.assertEqual(
                 _outcomes(cold),
                 {"item:build": "BUILT", "item:verify": "BUILT"},
@@ -371,6 +374,158 @@ out.mkdir(parents=True, exist_ok=True)
                 _outcomes(removed),
                 {"item:build": "BUILT", "item:verify": "BUILT"},
             )
+
+    def test_parallel_consumers_use_private_dependency_snapshots(self):
+        """Two consumers may overlap without sharing dependency output roots."""
+
+        self.require_scons()
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            _write(
+                root / "cad-ci.yml",
+                "schema: 1\nitems: [library, consumer-a, consumer-b]\n",
+            )
+            _write(root / "library" / "input.txt", "library-bytes\n")
+            _write(
+                root / "library" / "build.py",
+                """import os
+from pathlib import Path
+out = Path(os.environ["CAD_CI_OUTPUT"])
+out.mkdir(parents=True, exist_ok=True)
+(out / "lib.txt").write_text(Path(__file__).with_name("input.txt").read_text())
+""",
+            )
+            _write(
+                root / "library" / "ci.yml",
+                "id: library\n"
+                "steps:\n"
+                "  - id: build\n"
+                "    inputs: [library/input.txt, library/build.py]\n"
+                "    run: [python, build.py]\n"
+                "    outputs: [lib.txt]\n",
+            )
+
+            consumer_script = """import json
+import os
+from pathlib import Path
+import time
+from cad_ci.context import current_context
+
+ctx = current_context()
+dependency = ctx.dependency("library")
+before = dependency.output("lib.txt").read_text()
+started = time.time()
+time.sleep(0.4)
+after = dependency.output("lib.txt").read_text()
+finished = time.time()
+ctx.output.mkdir(parents=True, exist_ok=True)
+(ctx.output / "result.json").write_text(json.dumps({
+    "before": before,
+    "after": after,
+    "started": started,
+    "finished": finished,
+    "dependency_root": str(dependency.root),
+}))
+"""
+            for name in ("consumer-a", "consumer-b"):
+                _write(root / name / "trigger.txt", "one\n")
+                _write(root / name / "run.py", consumer_script)
+                _write(
+                    root / name / "ci.yml",
+                    f"id: {name}\n"
+                    "needs: [library]\n"
+                    "steps:\n"
+                    "  - id: run\n"
+                    f"    inputs: [{name}/trigger.txt, {name}/run.py]\n"
+                    "    run: [python, run.py]\n"
+                    "    outputs: [result.json]\n",
+                )
+
+            parallel = self.run_selected(
+                root,
+                {"library", "consumer-a", "consumer-b"},
+                jobs=2,
+            )
+            self.assertEqual(parallel["jobs"], 2)
+            self.assertEqual(
+                _outcomes(parallel),
+                {
+                    "library:build": "BUILT",
+                    "consumer-a:run": "BUILT",
+                    "consumer-b:run": "BUILT",
+                },
+            )
+
+            results = []
+            for name in ("consumer-a", "consumer-b"):
+                result = json.loads(
+                    (
+                        root / "build" / name / "result.json"
+                    ).read_text(encoding="utf-8")
+                )
+                self.assertEqual(result["before"], "library-bytes\n")
+                self.assertEqual(result["after"], "library-bytes\n")
+                results.append(result)
+
+            self.assertNotEqual(
+                results[0]["dependency_root"],
+                results[1]["dependency_root"],
+            )
+            self.assertIn(
+                DEPENDENCY_RUN_ROOT.as_posix(),
+                results[0]["dependency_root"].replace("\\", "/"),
+            )
+            self.assertLess(
+                max(result["started"] for result in results),
+                min(result["finished"] for result in results),
+            )
+            self.assertEqual(
+                (root / "build" / "library" / "lib.txt").read_text(),
+                "library-bytes\n",
+            )
+
+            (root / "build" / "library" / "lib.txt").unlink()
+            _write(root / "consumer-a" / "trigger.txt", "two\n")
+            _write(root / "consumer-b" / "trigger.txt", "two\n")
+            repaired = self.run_selected(
+                root,
+                {"consumer-a", "consumer-b"},
+                jobs=2,
+            )
+            self.assertEqual(repaired["jobs"], 2)
+            self.assertEqual(
+                _outcomes(repaired),
+                {
+                    "library:build": "CURRENT",
+                    "consumer-a:run": "BUILT",
+                    "consumer-b:run": "BUILT",
+                },
+            )
+            self.assertEqual(
+                (root / "build" / "library" / "lib.txt").read_text(),
+                "library-bytes\n",
+            )
+
+    def test_jobs_default_one_and_invalid_values_fail(self):
+        """Parallelism is explicit and the compatibility default remains one."""
+
+        self.require_scons()
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self.make_simple_repo(root)
+            items = load_repository(root)
+            request = resolve_request(items, {"item"})
+
+            report = run_scons(root, items, request)
+            self.assertEqual(report["jobs"], 1)
+
+            for value in (0, -1, True, 1.5):
+                with self.subTest(value=value):
+                    with self.assertRaisesRegex(
+                        SConsRunError,
+                        "jobs must be a positive integer",
+                    ):
+                        run_scons(root, items, request, jobs=value)
 
     def test_cumulative_dependency_bundle_propagates_earlier_output(self):
         self.require_scons()
@@ -784,7 +939,8 @@ out.mkdir(parents=True, exist_ok=True)
             )
 
             report = json.loads((root / REPORT_PATH).read_text())
-            self.assertEqual(report["schema_version"], 3)
+            self.assertEqual(report["schema_version"], 4)
+            self.assertEqual(report["jobs"], 1)
             self.assertRegex(report["started_at"], UTC_TIMESTAMP)
             self.assertRegex(report["finished_at"], UTC_TIMESTAMP)
             self.assertLessEqual(report["started_at"], report["finished_at"])

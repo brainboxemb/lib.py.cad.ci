@@ -27,16 +27,17 @@ from .scons_bundle import (
 from .timing import utc_now
 
 
-ENGINE_SCHEMA = 1
+ENGINE_SCHEMA = 2
 MANIFEST_SCHEMA = 1
 REPORT_SCHEMA = "cad-ci.scons-results"
-REPORT_SCHEMA_VERSION = 3
+REPORT_SCHEMA_VERSION = 4
 OUTCOMES = ("BUILT", "CACHE_RESTORED", "CURRENT", "ERROR")
 
 CACHE_ROOT = Path(".cache/cad-ci/scons/cache")
 STATE_ROOT = Path(".cache/cad-ci/scons/state")
 TARGET_ROOT = Path(".cache/cad-ci/scons/targets")
 RUN_ROOT = Path(".cache/cad-ci/scons/run")
+DEPENDENCY_RUN_ROOT = RUN_ROOT / "dependencies"
 MANIFEST_PATH = RUN_ROOT / "manifest.json"
 REPORT_PATH = RUN_ROOT / "result.json"
 
@@ -357,6 +358,8 @@ def write_manifest(
     repo: Path,
     items: dict[str, Item],
     request: RunRequest,
+    *,
+    jobs: int = 1,
 ) -> Path:
     """Write the private manifest consumed by the SCons driver."""
 
@@ -370,6 +373,8 @@ def write_manifest(
         "engine_schema": ENGINE_SCHEMA,
         "cache_root": CACHE_ROOT.as_posix(),
         "sconsign": (STATE_ROOT / ".sconsign.dblite").as_posix(),
+        "dependency_run_root": DEPENDENCY_RUN_ROOT.as_posix(),
+        "jobs": jobs,
         "targets": specs_list,
         "requested_keys": list(request.requested_keys),
         "force_keys": sorted(request.force_keys),
@@ -590,6 +595,7 @@ def write_report(
         "schema_version": REPORT_SCHEMA_VERSION,
         "engine": "scons",
         "engine_schema": ENGINE_SCHEMA,
+        "jobs": int(payload.get("jobs", 1)),
         "started_at": run_started_at,
         "finished_at": run_finished_at,
         "requested_keys": list(payload["requested_keys"]),
@@ -729,6 +735,8 @@ def print_summary(report: dict[str, Any]) -> None:
 def _empty_report(
     run_started_at: str,
     run_finished_at: str,
+    *,
+    jobs: int = 1,
 ) -> dict[str, Any]:
     """Return the standard no-target run report."""
 
@@ -737,6 +745,7 @@ def _empty_report(
         "schema_version": REPORT_SCHEMA_VERSION,
         "engine": "scons",
         "engine_schema": ENGINE_SCHEMA,
+        "jobs": jobs,
         "started_at": run_started_at,
         "finished_at": run_finished_at,
         "requested_keys": [],
@@ -751,8 +760,13 @@ def run_scons(
     repo: Path,
     items: dict[str, Item],
     request: RunRequest | tuple[str, ...],
+    *,
+    jobs: int = 1,
 ) -> dict[str, Any]:
     """Run one selected graph through SCons and produce output/evidence."""
+
+    if isinstance(jobs, bool) or not isinstance(jobs, int) or jobs <= 0:
+        raise SConsRunError("jobs must be a positive integer")
 
     repo = repo.resolve()
     run_started_at = utc_now()
@@ -760,7 +774,7 @@ def run_scons(
         request = RunRequest(request, frozenset())
 
     if not request.requested_keys:
-        report = _empty_report(run_started_at, utc_now())
+        report = _empty_report(run_started_at, utc_now(), jobs=jobs)
         path = repo / REPORT_PATH
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(
@@ -772,12 +786,15 @@ def run_scons(
     if shutil.which("scons") is None:
         raise SConsRunError("SCons is required but 'scons' is not installed")
 
-    manifest = write_manifest(repo, items, request)
+    shutil.rmtree(repo / DEPENDENCY_RUN_ROOT, ignore_errors=True)
+    manifest = write_manifest(repo, items, request, jobs=jobs)
     driver = Path(__file__).with_name("scons_driver.py").resolve()
     completed = subprocess.run(
         [
             "scons",
             "-Q",
+            "-j",
+            str(jobs),
             "-f",
             str(driver),
             f"CAD_CI_MANIFEST={MANIFEST_PATH.as_posix()}",

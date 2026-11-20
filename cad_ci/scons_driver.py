@@ -82,8 +82,20 @@ def _materialize_spec(spec: dict) -> str:
     )
 
 
+def _dependency_snapshot_root(spec: dict, dependency: dict) -> Path:
+    """Return the target-private runtime root for one direct dependency."""
+
+    return (
+        ROOT
+        / Path(MANIFEST["dependency_run_root"])
+        / Path(spec["item_path"])
+        / str(spec["step_id"])
+        / Path(dependency["item_path"])
+    )
+
+
 def _dependency_context(spec: dict) -> dict:
-    """Build runtime context for direct item dependencies."""
+    """Materialize private direct-dependency snapshots for one consumer target."""
 
     result: dict[str, dict] = {}
     for dependency in spec["direct_dependencies"]:
@@ -94,10 +106,14 @@ def _dependency_context(spec: dict) -> dict:
                 f"dependency bundle is missing: {dependency['item_id']}"
             )
 
+        snapshot_root = _dependency_snapshot_root(spec, dependency)
+        materialize_bundle(
+            final_bundle,
+            snapshot_root,
+            tuple(str(value) for value in dependency["outputs"]),
+        )
         result[str(dependency["item_id"])] = {
-            "output_root": str(
-                (ROOT / "build" / Path(dependency["item_path"])).resolve()
-            ),
+            "output_root": str(snapshot_root.resolve()),
             "outputs": list(dependency["outputs"]),
             "final_bundle": str(final_bundle.resolve()),
             "final_bundle_sha256": bundle_sha256(final_bundle),
@@ -105,7 +121,10 @@ def _dependency_context(spec: dict) -> dict:
     return result
 
 
-def _command_environment(spec: dict) -> dict[str, str]:
+def _command_environment(
+    spec: dict,
+    dependency_context: dict,
+) -> dict[str, str]:
     """Build the environment exposed to the consumer command."""
 
     env = dict(os.environ)
@@ -127,7 +146,7 @@ def _command_environment(spec: dict) -> dict[str, str]:
             ),
             "CAD_CI_OUTPUT": str(_output_root(spec).resolve()),
             "CAD_CI_DEPENDENCIES_JSON": json.dumps(
-                _dependency_context(spec),
+                dependency_context,
                 sort_keys=True,
                 separators=(",", ":"),
             ),
@@ -188,9 +207,15 @@ def _execute_bundle(target, source, env) -> int:
     try:
         # Cumulative predecessor/final dependency bundles restore every output
         # the current action may legitimately read.
+        direct_dependency_keys = {
+            str(dependency["final_key"])
+            for dependency in spec["direct_dependencies"]
+        }
         for dependency_key in spec["materialize_before"]:
-            _materialize_spec(SPECS[str(dependency_key)])
+            if str(dependency_key) not in direct_dependency_keys:
+                _materialize_spec(SPECS[str(dependency_key)])
 
+        dependency_context = _dependency_context(spec)
         output_root.mkdir(parents=True, exist_ok=True)
         remove_outputs(
             output_root,
@@ -211,7 +236,7 @@ def _execute_bundle(target, source, env) -> int:
         completed = subprocess.run(
             command,
             cwd=ROOT / Path(spec["item_path"]),
-            env=_command_environment(spec),
+            env=_command_environment(spec, dependency_context),
             shell=bool(spec["shell"]),
             check=False,
             timeout=spec["timeout_seconds"],

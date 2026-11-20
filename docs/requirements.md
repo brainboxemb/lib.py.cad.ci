@@ -741,3 +741,56 @@ source provenance.
 This behavior belongs to the library. CLI/workflow layers may provide the
 selected and current item sets, but they must not decide which durable paths to
 delete.
+
+
+## 26. Bounded parallel execution
+
+CAD-CI supports an explicit positive SCons job count.
+
+- the library execution API defaults to `jobs=1` for backward compatibility;
+- a supplied job count must be an integer greater than zero and booleans are
+  invalid;
+- the job count controls only SCons scheduling and never target signatures,
+  Git selection, cache keys or publication semantics;
+- dependency ordering remains the configured SCons graph;
+- independent targets may overlap only when the caller explicitly requests
+  `jobs > 1`.
+
+### Direct dependency snapshots
+
+A consumer command must never rely on a mutable shared dependency output root
+when parallel execution is enabled.
+
+Before each consumer command:
+
+- every direct dependency final bundle is already current by normal SCons
+  dependency ordering;
+- CAD-CI materializes that final bundle into a target-private runtime snapshot;
+- `current_context().dependency(id).output_root` points to that private
+  snapshot for the duration of that consumer command;
+- two consumer steps never share the same runtime snapshot directory;
+- the snapshot contains exactly the dependency's declared cumulative outputs;
+- dependency bundle digest/provenance remains the same value exposed today.
+
+Target-private dependency snapshots live only below the private CAD-CI run
+directory. They are not public build output and are never published.
+
+A consumer must treat dependency context as input. Mutating its private snapshot
+cannot affect another consumer or public dependency output.
+
+### Previous-step materialization
+
+Ordered steps within one item keep their existing semantics.
+
+The previous step bundle is materialized into that item's normal
+`build/<item>/` output root before the next step executes. The SCons step
+dependency prevents those steps from overlapping.
+
+### Public output
+
+After SCons completes, active target bundles are materialized into public
+`build/<item>/` output exactly as before. Parallel execution therefore does
+not change durable build-store or Pages/publication input.
+
+Changing only the requested job count must not invalidate otherwise current
+SCons targets.

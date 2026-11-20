@@ -696,3 +696,88 @@ Format: UTC ISO-8601, millisecond precision, literal `Z`.
 
 `duration_seconds` keeps its current monotonic-clock definition. Timestamp
 fields are observability only.
+
+
+## 21. Bounded parallel SCons execution
+
+The engine receives one explicit `jobs` value from the public execution API
+and invokes:
+
+```text
+scons -Q -j <jobs> -f <driver> CAD_CI_MANIFEST=...
+```
+
+`jobs` is execution policy, not target identity. It is recorded in the private
+run manifest/report for observability but excluded from target signatures.
+
+The default is one job.
+
+Because parallel consumers can share one direct dependency, consumer commands
+must no longer materialize direct dependencies into the shared public
+`build/<dependency>` tree.
+
+### Target-private dependency snapshot
+
+For consumer target:
+
+```text
+<consumer item>:<step>
+```
+
+and direct dependency:
+
+```text
+<dependency item>:<final step>
+```
+
+the driver materializes the immutable dependency final bundle under:
+
+```text
+.cache/cad-ci/scons/run/dependencies/
+  <consumer item path>/
+    <consumer step>/
+      <dependency item path>/
+```
+
+The run dependency root is cleared before each SCons invocation.
+
+The dependency context passed to the consumer contains this private
+`output_root`, the configured output list, final bundle path and bundle
+SHA-256.
+
+No other target writes that private root.
+
+### Own step predecessors
+
+`materialize_before` continues to include the previous step target for an
+item. The driver materializes non-direct-dependency predecessors into the
+item's normal output root before the current action.
+
+Direct dependency final keys are excluded from this shared materialization path
+and instead use the private snapshot flow above.
+
+### Post-run public materialization
+
+`write_report()` keeps the existing `_materialize_active()` phase. It
+restores/repairs public active item output from final target bundles after SCons
+has completed. Durable/publication consumers therefore see the same
+`build/<item>` layout.
+
+### Schema boundary
+
+Increment `ENGINE_SCHEMA` because action-time dependency materialization and
+runtime context paths change. Existing target signatures include
+`engine_schema`, so the first run with the new engine rebuilds the affected
+targets deliberately.
+
+Increment the structured report schema when the explicit `jobs` observation is
+added.
+
+### Failure boundary
+
+A dependency-snapshot materialization failure is still a setup/materialization
+error before consumer-command execution. Action start/finish timestamps remain
+null for that failure.
+
+SCons owns parallel scheduling and dependency ordering. CAD-CI does not add a
+thread/process pool beside SCons.

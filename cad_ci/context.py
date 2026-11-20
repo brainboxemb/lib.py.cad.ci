@@ -1,7 +1,8 @@
 """Expose direct dependency output already made current by SCons.
 
 The SCons action wrapper materializes each direct dependency's cumulative final
-bundle before the consumer command runs and supplies CAD_CI_DEPENDENCIES_JSON.
+bundle into a target-private runtime snapshot before the consumer command runs
+and supplies CAD_CI_DEPENDENCIES_JSON.
 This module validates that runtime context. It never decides whether a
 dependency should rebuild.
 """
@@ -39,7 +40,7 @@ def _declared_outputs(item: Item) -> frozenset[str]:
 
 @dataclass(frozen=True)
 class Dependency:
-    """One direct dependency materialized from its cumulative final bundle."""
+    """One direct dependency snapshot materialized from its final bundle."""
 
     id: str
     result_fingerprint: str
