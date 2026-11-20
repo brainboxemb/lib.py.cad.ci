@@ -27,6 +27,7 @@ this work.
 | --- | --- | --- |
 | #44 Update repository plan after 0.6.0 release | now | Plan-only correction required after the successful v0.6.0 release. |
 | #40 Add timestamps to CAD-CI run and step evidence | later | Separate observability improvement; keep it outside the current process-selection adoption chain. |
+| #46 Avoid full library test run for documentation-only changes | blocked | Concrete consumer need is recorded here, but the generic solution belongs in tool.py.lib.ci #11. Adopt only after that tool behavior is released and externally tested. |
 
 ## Released state
 
