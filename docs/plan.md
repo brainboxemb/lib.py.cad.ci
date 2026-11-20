@@ -17,10 +17,12 @@ before Forge consumes it.
 ## Execution order
 
 1. Define the `process` contract in requirements:
-   - every item explicitly declares `process: true` or `process: false`;
-   - there is no default;
-   - `process: false` items never participate in planning/execution;
-   - an active item may not depend on an excluded item.
+   - omitted `process` keeps normal existing item behavior;
+   - explicit `process: false` excludes that item from planning/execution;
+   - explicit `process: true` documents that the item participates normally;
+   - an active item may not depend on an excluded item;
+   - Forge will use this flag only on model-verification items, not to disable
+     the Forge library build/test item.
 2. Define exact planner/SCons semantics and acceptance sequences.
 3. Implement configuration/model/planner/runner support.
 4. Prove the behavior with library tests, including:
@@ -41,14 +43,16 @@ before Forge consumes it.
 After the released stack passes black-box acceptance, Forge will use
 `process` for one vertical end-to-end proof:
 
-1. exactly five representative model items are set to `process: true`;
-2. every other model item is set to `process: false`;
-3. the five active models are taken through the complete Forge chain, not only
-   model verification;
-4. once that complete chain is green and stable, remaining models are enabled
-   one at a time;
-5. a change to a shared thin wrapper may deliberately rerun all currently
-   active dependent models.
+1. the Forge tool/library build and test item remains active;
+2. exactly five representative model-verification items are set to
+   `process: true`;
+3. every other model-verification item is set to `process: false`;
+4. the five active model verifications are taken through the complete Forge
+   chain;
+5. once that complete chain is green and stable, remaining model-verification
+   items are enabled one at a time;
+6. a change to a shared thin verification wrapper may deliberately rerun all
+   currently active model-verification items.
 
 This repository does not implement Forge-specific selection or model logic.
 
