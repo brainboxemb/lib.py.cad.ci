@@ -2,10 +2,13 @@
 
 from pathlib import Path
 import shutil
+import subprocess
 import tempfile
 import unittest
 
 from cad_ci.config import load_repository
+from cad_ci.git import changed_files
+from cad_ci.planner import affected_items
 from cad_ci.runner import RunError, run_repository
 
 
@@ -68,6 +71,113 @@ class RunnerTests(unittest.TestCase):
                 [row["outcome"] for row in second["targets"]],
                 ["CURRENT", "CURRENT"],
             )
+
+
+    def test_fresh_clone_runs_only_git_affected_item(self):
+        self.require_scons()
+        with tempfile.TemporaryDirectory() as tmp:
+            workspace = Path(tmp)
+            source = workspace / "source"
+            source.mkdir()
+
+            subprocess.run(
+                ["git", "init", "--quiet"],
+                cwd=source,
+                check=True,
+            )
+            subprocess.run(
+                ["git", "config", "user.name", "cad-ci-test"],
+                cwd=source,
+                check=True,
+            )
+            subprocess.run(
+                ["git", "config", "user.email", "cad-ci-test@example.invalid"],
+                cwd=source,
+                check=True,
+            )
+
+            _write(source / "cad-ci.yml", "schema: 1\nitems: [a, b]\n")
+            for item in ("a", "b"):
+                _write(source / item / "input.txt", "base\n")
+                _write(
+                    source / item / "run.py",
+                    "import os\n"
+                    "from pathlib import Path\n"
+                    "out = Path(os.environ['CAD_CI_OUTPUT'])\n"
+                    "out.mkdir(parents=True, exist_ok=True)\n"
+                    "(out / 'result.txt').write_text("
+                    "Path(__file__).with_name('input.txt').read_text())\n",
+                )
+                _write(
+                    source / item / "ci.yml",
+                    f"id: {item}\n"
+                    f"watch: [{item}/**]\n"
+                    "steps:\n"
+                    "  - id: build\n"
+                    f"    inputs: [{item}/input.txt, {item}/run.py]\n"
+                    "    run: [python, run.py]\n"
+                    "    outputs: [result.txt]\n",
+                )
+
+            subprocess.run(
+                ["git", "add", "."],
+                cwd=source,
+                check=True,
+            )
+            subprocess.run(
+                ["git", "commit", "--quiet", "-m", "base"],
+                cwd=source,
+                check=True,
+            )
+            base = subprocess.check_output(
+                ["git", "rev-parse", "HEAD"],
+                cwd=source,
+                text=True,
+            ).strip()
+
+            _write(source / "a" / "input.txt", "changed\n")
+            subprocess.run(
+                ["git", "add", "a/input.txt"],
+                cwd=source,
+                check=True,
+            )
+            subprocess.run(
+                ["git", "commit", "--quiet", "-m", "change a"],
+                cwd=source,
+                check=True,
+            )
+            head = subprocess.check_output(
+                ["git", "rev-parse", "HEAD"],
+                cwd=source,
+                text=True,
+            ).strip()
+
+            runner = workspace / "runner"
+            subprocess.run(
+                ["git", "clone", "--quiet", str(source), str(runner)],
+                check=True,
+            )
+
+            self.assertFalse((runner / "build").exists())
+            self.assertFalse((runner / ".cache" / "cad-ci").exists())
+
+            changed = changed_files(runner, base, head)
+            self.assertEqual(changed, ("a/input.txt",))
+
+            items = load_repository(runner)
+            selected = affected_items(items, changed)
+            self.assertEqual(selected, {"a"})
+
+            report = run_repository(runner, items, selected)
+            self.assertEqual(
+                [(row["key"], row["outcome"]) for row in report["targets"]],
+                [("a:build", "BUILT")],
+            )
+            self.assertEqual(
+                (runner / "build" / "a" / "result.txt").read_text(),
+                "changed\n",
+            )
+            self.assertFalse((runner / "build" / "b").exists())
 
     def test_partial_selectors_are_mutually_exclusive(self):
         self.require_scons()

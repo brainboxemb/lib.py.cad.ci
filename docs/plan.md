@@ -10,48 +10,63 @@ issues contain detail and history.
 `lib.py.cad.ci 0.7.1` is released at commit
 `c031f5dce3a4b0b207d8ce24716b5e11cdd12df2`.
 
-Repository package CI uses exact released `tool.py.lib.ci 0.1.5` commit
-`d189d0718659ca3927f1dddbe373c1c788b11b6c`.
+The released stack already has:
+- exact Git revision comparison through `changed_files()`;
+- affected-item selection through item `watch` configuration;
+- one SCons graph invocation for the selected items;
+- partial durable build updates that preserve unaffected item output.
 
-The release job consumes the reusable `change_scope` output and must not run
-for a documentation-only main push.
+The normal GitHub-hosted `tool.cad.ci` workflow does not restore or transport
+`.cache/cad-ci/scons/cache`. A selected item therefore starts cold on a fresh
+hosted runner.
 
 ## Current goal
 
-Complete #46 with one pure documentation-only acceptance change.
+Complete #56 before #54 or any further Forge migration.
 
-This branch deliberately changes only `docs/plan.md`. The CI runs themselves
-are the proof.
+Make the hosted-runner contract literal:
+
+```text
+Git diff
+  -> affected processed items
+  -> selected items execute cold on a fresh runner
+  -> unselected items are not given to SCons
+  -> durable publication replaces only selected item paths
+```
+
+Cross-run SCons cache reuse is not part of the required hosted-CI behavior.
 
 ## Required proof
 
-On this pull request:
+The library acceptance must create two Git revisions and then execute from a
+fresh clone with no `build/` and no `.cache/cad-ci/`.
 
-- change scope is `docs-only`;
-- setup-python is skipped;
-- wheel build/install/tests are skipped;
-- the normal required test check succeeds.
+When only item A changes:
+- Git diff reports only A's changed path;
+- affected selection returns A only;
+- SCons receives/executes A only;
+- A is BUILT;
+- B has no target outcome and no build output.
 
-After squash merge to main:
+Existing local SCons CURRENT and explicit CacheDir-restore tests remain valid
+capability tests, but they must not be described as the default hosted-runner
+path.
 
-- push change scope is also `docs-only`;
-- setup-python and package validation remain skipped;
-- the repository `release` job is skipped via
-  `needs.test.outputs.change_scope`;
-- no release/publication work is performed.
+## Execution order
+
+1. #56 update requirements/design/acceptance.
+2. Add fresh-clone no-cache Git-diff execution acceptance in this library.
+3. Keep the complete library suite green.
+4. Prove the same released behavior black-box in `tool.cad.ci.test`.
+5. Only then resume #54 configuration ergonomics.
+6. Only after #54 is released and externally accepted may Forge reference items
+   be migrated.
 
 ## Open issue assessment — 2026-11-20
 
 | Issue | Status | Assessment |
 | --- | --- | --- |
-| #46 Avoid full library test run for documentation-only changes | now | Final real-consumer proof of both pull-request and post-merge main behavior using released tool.py.lib.ci 0.1.5. |
+| #56 Define hosted-runner incrementality without assuming persistent SCons cache | now | Architecture correction and fresh-runner acceptance required before consumer migration. |
+| #54 Add item-root-relative paths and inherited CI templates | blocked | Useful configuration ergonomics, but blocked until #56 establishes and proves the execution model it must preserve. |
 
-No other open issues exist in this repository snapshot.
-
-## Released state
-
-CAD-CI timing evidence and build-store schema compatibility are released in
-v0.7.1. Released `tool.cad.ci 0.12.1` pins this exact library revision.
-
-After #46 is proven and merged, this repository has no unfinished issue in the
-current CI-acceleration chain.
+No Forge consumer change is allowed before this chain is externally accepted.
