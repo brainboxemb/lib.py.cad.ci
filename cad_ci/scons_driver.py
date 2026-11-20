@@ -142,12 +142,17 @@ def _action_error(
     duration: float,
     exit_code: int | None = None,
     error: str | None = None,
+    started_at: str | None = None,
+    finished_at: str | None = None,
 ) -> int:
     """Record one failed consumer action and return SCons failure."""
 
     data = {
         "key": spec["key"],
         "status": status,
+        "action_executed": started_at is not None,
+        "started_at": started_at,
+        "finished_at": finished_at,
         "duration_seconds": round(duration, 3),
         "exit_code": exit_code,
         "timeout_seconds": spec["timeout_seconds"],
@@ -193,6 +198,7 @@ def _execute_bundle(target, source, env) -> int:
         )
 
     command = spec["run"]
+    action_started_at = utc_now()
     try:
         completed = subprocess.run(
             command,
@@ -208,6 +214,8 @@ def _execute_bundle(target, source, env) -> int:
             spec,
             status="timeout",
             duration=time.monotonic() - started,
+            started_at=action_started_at,
+            finished_at=utc_now(),
         )
     except OSError as exc:
         return _action_error(
@@ -216,8 +224,11 @@ def _execute_bundle(target, source, env) -> int:
             status="fail",
             duration=time.monotonic() - started,
             error=str(exc),
+            started_at=action_started_at,
+            finished_at=utc_now(),
         )
 
+    action_finished_at = utc_now()
     duration = time.monotonic() - started
     if completed.returncode != 0:
         return _action_error(
@@ -226,6 +237,8 @@ def _execute_bundle(target, source, env) -> int:
             status="fail",
             duration=duration,
             exit_code=completed.returncode,
+            started_at=action_started_at,
+            finished_at=action_finished_at,
         )
 
     try:
@@ -243,6 +256,8 @@ def _execute_bundle(target, source, env) -> int:
             duration=duration,
             exit_code=completed.returncode,
             error=str(exc),
+            started_at=action_started_at,
+            finished_at=action_finished_at,
         )
 
     _write_json(
@@ -250,6 +265,9 @@ def _execute_bundle(target, source, env) -> int:
         {
             "key": spec["key"],
             "status": "pass",
+            "action_executed": True,
+            "started_at": action_started_at,
+            "finished_at": action_finished_at,
             "duration_seconds": round(duration, 3),
             "exit_code": completed.returncode,
             "timeout_seconds": spec["timeout_seconds"],
