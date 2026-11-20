@@ -7,39 +7,51 @@ issues contain detail and history.
 
 ## Current status
 
-`lib.py.cad.ci 0.7.0` is released at commit
-`8955c74055105b06d6af69e0d2f82b6b1fbf575a`.
+`lib.py.cad.ci 0.7.1` is released at commit
+`c031f5dce3a4b0b207d8ce24716b5e11cdd12df2`.
 
-External acceptance found one release compatibility defect: newly generated
-item evidence uses schema 2, while the durable build-store validator still
-accepts only schema 1.
+Repository package CI uses exact released `tool.py.lib.ci 0.1.5` commit
+`d189d0718659ca3927f1dddbe373c1c788b11b6c`.
+
+The release job consumes the reusable `change_scope` output and must not run
+for a documentation-only main push.
 
 ## Current goal
 
-Complete #52 as a 0.7.1 patch release.
+Complete #46 with one pure documentation-only acceptance change.
 
-Current candidate output must use the current item evidence schema. Existing
-stored durable output from the previous release must remain readable.
+This branch deliberately changes only `docs/plan.md`. The CI runs themselves
+are the proof.
 
-## Execution order
+## Required proof
 
-1. Define current-candidate versus legacy-stored evidence compatibility.
-2. Require schema 2 for newly prepared candidate items.
-3. Accept stored durable item evidence schema 1 or 2 during migration.
-4. Keep unknown schemas rejected.
-5. Add direct build-store regression tests for both paths.
-6. Release 0.7.1 after green CI.
-7. Update tool.cad.ci to a 0.12.1 exact library pin.
-8. Continue the existing tool.cad.ci.test PR against that patch stack.
+On this pull request:
+
+- change scope is `docs-only`;
+- setup-python is skipped;
+- wheel build/install/tests are skipped;
+- the normal required test check succeeds.
+
+After squash merge to main:
+
+- push change scope is also `docs-only`;
+- setup-python and package validation remain skipped;
+- the repository `release` job is skipped via
+  `needs.test.outputs.change_scope`;
+- no release/publication work is performed.
 
 ## Open issue assessment — 2026-11-20
 
 | Issue | Status | Assessment |
 | --- | --- | --- |
-| #52 Accept current item evidence schema in build store without breaking legacy durable state | now | Release regression found by external acceptance; fix before continuing the 0.12.x stack acceptance. |
-| #46 Avoid full library test run for documentation-only changes | now | Separate docs-only real-consumer proof is already running in PR #51; do not mix product code into it. |
+| #46 Avoid full library test run for documentation-only changes | now | Final real-consumer proof of both pull-request and post-merge main behavior using released tool.py.lib.ci 0.1.5. |
 
-## Boundary
+No other open issues exist in this repository snapshot.
 
-This patch changes only build-store evidence compatibility. It does not change
-SCons execution, timing semantics, build manifest schema or selection.
+## Released state
+
+CAD-CI timing evidence and build-store schema compatibility are released in
+v0.7.1. Released `tool.cad.ci 0.12.1` pins this exact library revision.
+
+After #46 is proven and merged, this repository has no unfinished issue in the
+current CI-acceleration chain.
