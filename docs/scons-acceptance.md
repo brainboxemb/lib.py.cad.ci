@@ -673,3 +673,59 @@ For timeout or command failure after consumer-command execution:
 For a materialization/setup failure before consumer-command execution:
 
 - action start and finish timestamps are null.
+
+
+## Case 23A - nested durable item ownership
+
+Repository items:
+
+```text
+parent path: cases/model
+  outputs: model.json
+
+child path: cases/model/reference
+  outputs: reference.json
+```
+
+Candidate tree contains both complete item results.
+
+Required sequences:
+
+1. prepare main with parent + child:
+   - succeeds;
+   - parent evidence/output exists;
+   - child evidence/output exists;
+   - manifest has both rows with `outputs` metadata.
+
+2. prepare PR overlay with parent + child:
+   - succeeds without directory collision;
+   - both items validate independently.
+
+3. prepare PR overlay with child only:
+   - contains child output/evidence only;
+   - no parent output/evidence is imported merely because the child path is
+     nested below it.
+
+4. update existing main with parent only:
+   - parent output/evidence changes;
+   - child output/evidence bytes are unchanged.
+
+5. update existing main with child only:
+   - child output/evidence changes;
+   - parent output/evidence bytes are unchanged.
+
+6. resolve/promote a new-format parent overlay:
+   - replaces parent ownership only;
+   - nested child remains intact.
+
+7. candidate parent directory contains descendant child output:
+   - preparing parent alone does not import child output.
+
+8. legacy schema-1 non-nested row without `outputs`:
+   - remains readable.
+
+9. legacy row without `outputs` that would replace a nested item:
+   - fails with an explicit ambiguous-ownership error.
+
+10. configuration where parent output overlaps child item root:
+   - fails during repository configuration loading.

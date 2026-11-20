@@ -614,3 +614,70 @@ After loading, planner and SCons receive the same normalized Item/Step model as
 before. On a fresh hosted runner, Git changed-file selection still decides which
 items are requested and selected items are cold unless real SCons state/cache is
 present.
+
+
+## 23. Nested durable item ownership
+
+Durable build storage must support configured item source paths that are
+ancestors/descendants of each other.
+
+An item owns only:
+
+- every output path declared by its configured steps;
+- its reserved `.cad-ci/` evidence directory.
+
+An item does not own arbitrary sibling or descendant paths under its source-path
+directory.
+
+Example:
+
+```text
+item A path: examples/attach-angle
+A outputs:   solidcraft.json, model_verify
+
+item B path: examples/attach-angle/build123d
+B outputs:   references
+```
+
+Updating or publishing A must not copy, replace or remove B's
+`build123d/references` or `build123d/.cad-ci` content.
+
+### Durable manifest ownership metadata
+
+New item manifest rows keep build manifest schema 1 and additionally record:
+
+```json
+"outputs": ["model_verify", "solidcraft.json"]
+```
+
+The list is the sorted unique set of consumer output paths declared by all
+steps of that item. The reserved `.cad-ci` path is implicit and is not listed.
+
+Stored schema-1 rows created by older releases may omit `outputs`.
+They remain readable for backward compatibility.
+
+A stored row without ownership metadata may use the historical whole-tree
+behavior only when that item path has no ancestor/descendant relationship with
+another item involved in the durable view. If a legacy row is ambiguous in a
+nested layout, the operation must fail clearly instead of guessing ownership.
+
+### Copy and replace semantics
+
+Prepare operations copy only declared output paths plus `.cad-ci/`.
+
+Update, resolve and promote operations replace only the owned paths for the
+selected/overlay item. Unselected nested parent/child item bytes remain
+unchanged.
+
+All selected candidates are validated before the output scope is exposed.
+
+### Configuration collision safety
+
+A repository configuration is invalid when a parent item's declared output path
+physically overlaps a nested item's source root.
+
+For parent item `a` and child item `a/child`, parent output paths such as
+`child`, `child/result` or an ancestor of `child` are invalid.
+
+This validation is configuration-only. It does not add file hashing, Git
+selection or another rebuild engine.

@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.8.2
+
+- make durable build preparation and replacement ownership-aware for nested item paths;
+- record declared consumer outputs in new build manifest item rows while keeping build manifest schema 1;
+- preserve nested parent/child item output during partial main updates, PR overlays, resolve and promote operations;
+- keep legacy non-nested durable rows readable and reject ambiguous legacy nested replacement;
+- reject configured parent outputs that overlap a nested item source root;
+- leave Git selection, SCons execution and cache behavior unchanged.
+
 ## 0.8.1
 
 - allow explicit `item:` watch/input paths to traverse parent directories when lexical normalization remains inside the repository;

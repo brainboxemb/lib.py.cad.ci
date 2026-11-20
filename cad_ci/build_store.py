@@ -43,6 +43,148 @@ def _safe_relative(path: Path | str) -> Path:
     return value
 
 
+def _safe_owned_output(path: Path | str) -> Path:
+    """Return one safe consumer-owned output path."""
+
+    value = _safe_relative(path)
+    if value.parts[0] == ".cad-ci":
+        raise BuildStoreError("consumer output may not use .cad-ci")
+    return value
+
+
+def _owned_outputs(item: Item) -> tuple[Path, ...]:
+    """Return the stable unique output paths owned by one configured item."""
+
+    values = {
+        _safe_owned_output(output)
+        for step in item.steps
+        for output in step.outputs
+    }
+    return tuple(sorted(values, key=lambda path: path.as_posix()))
+
+
+def _row_outputs(row: dict, item_path: Path) -> tuple[Path, ...] | None:
+    """Read optional durable ownership metadata from one stored row."""
+
+    value = row.get("outputs")
+    if value is None:
+        return None
+    if not isinstance(value, list) or not all(
+        isinstance(output, str) for output in value
+    ):
+        raise BuildStoreError(
+            f"invalid item outputs metadata: {item_path.as_posix()}"
+        )
+
+    outputs = tuple(_safe_owned_output(output) for output in value)
+    if len(outputs) != len(set(outputs)):
+        raise BuildStoreError(
+            f"duplicate item outputs metadata: {item_path.as_posix()}"
+        )
+    return tuple(sorted(outputs, key=lambda path: path.as_posix()))
+
+
+def _paths_nested(left: Path, right: Path) -> bool:
+    """Return whether two distinct repository paths are ancestor/descendant."""
+
+    if left == right:
+        return False
+    left_parts = left.parts
+    right_parts = right.parts
+    common = min(len(left_parts), len(right_parts))
+    return left_parts[:common] == right_parts[:common]
+
+
+def _remove_entry(path: Path) -> None:
+    """Remove one owned file/directory without touching neighboring paths."""
+
+    if path.is_symlink() or path.is_file():
+        path.unlink(missing_ok=True)
+    elif path.is_dir():
+        shutil.rmtree(path)
+
+
+def _copy_entry(source: Path, target: Path) -> None:
+    """Copy one validated owned file/directory to its exact target path."""
+
+    if source.is_symlink():
+        raise BuildStoreError(f"owned output is a symlink: {source}")
+    target.parent.mkdir(parents=True, exist_ok=True)
+    if source.is_dir():
+        if target.exists():
+            raise BuildStoreError(f"owned output target already exists: {target}")
+        shutil.copytree(source, target)
+        return
+    if source.is_file():
+        if target.exists():
+            raise BuildStoreError(f"owned output target already exists: {target}")
+        shutil.copy2(source, target)
+        return
+    raise BuildStoreError(f"missing owned output: {source}")
+
+
+def _copy_owned_item(
+    source_scope: Path,
+    target_scope: Path,
+    item_path: Path,
+    outputs: tuple[Path, ...],
+) -> None:
+    """Copy exactly one item's outputs and public evidence."""
+
+    source_item = source_scope / item_path
+    target_item = target_scope / item_path
+
+    for output in outputs:
+        _copy_entry(source_item / output, target_item / output)
+    _copy_entry(source_item / ".cad-ci", target_item / ".cad-ci")
+
+
+def _replace_owned_item(
+    source_scope: Path,
+    target_scope: Path,
+    item_path: Path,
+    outputs: tuple[Path, ...],
+) -> None:
+    """Replace one item's owned paths while preserving nested neighbors."""
+
+    target_item = target_scope / item_path
+    for output in outputs:
+        _remove_entry(target_item / output)
+    _remove_entry(target_item / ".cad-ci")
+    _copy_owned_item(source_scope, target_scope, item_path, outputs)
+
+
+def _replace_stored_item(
+    source_scope: Path,
+    target_scope: Path,
+    item_path: Path,
+    row: dict,
+    all_item_paths: tuple[Path, ...],
+) -> None:
+    """Replace one stored item using ownership metadata or safe legacy fallback."""
+
+    outputs = _row_outputs(row, item_path)
+    if outputs is not None:
+        _replace_owned_item(
+            source_scope,
+            target_scope,
+            item_path,
+            outputs,
+        )
+        return
+
+    if any(
+        _paths_nested(item_path, other)
+        for other in all_item_paths
+        if other != item_path
+    ):
+        raise BuildStoreError(
+            "legacy item ownership is ambiguous in nested layout: "
+            f"{item_path.as_posix()}"
+        )
+    _replace_tree(source_scope / item_path, target_scope / item_path)
+
+
 def _read_json(path: Path) -> dict:
     """Read one JSON object and report malformed generated state clearly."""
 
@@ -165,6 +307,10 @@ def _item_record(
         "final_step": expected_final_step,
         "final_target_spec_digest": spec_digest,
         "final_bundle_sha256": bundle_digest,
+        "outputs": [
+            output.as_posix()
+            for output in _owned_outputs(item)
+        ],
     }
 
 
@@ -221,9 +367,12 @@ def prepare_main(
     out.mkdir(parents=True)
 
     for item in configured:
-        target = out / item.path
-        target.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copytree(candidate_root / item.path, target)
+        _copy_owned_item(
+            candidate_root,
+            out,
+            item.path,
+            _owned_outputs(item),
+        )
 
     manifest = {
         "schema": BUILD_SCHEMA,
@@ -262,12 +411,14 @@ def update_main(
     shutil.copytree(main, out)
 
     rows = dict(main_manifest["items"])
-    for item_path, row in replacements.items():
-        _replace_tree(
-            candidate_root / item_path,
-            out / item_path,
+    for item in configured:
+        _replace_owned_item(
+            candidate_root,
+            out,
+            item.path,
+            _owned_outputs(item),
         )
-        rows[item_path.as_posix()] = row
+        rows[item.path.as_posix()] = replacements[item.path]
 
     manifest = {
         "schema": BUILD_SCHEMA,
@@ -307,9 +458,12 @@ def prepare_overlay(
     out.mkdir(parents=True)
 
     for item in configured:
-        target = out / item.path
-        target.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copytree(candidate_root / item.path, target)
+        _copy_owned_item(
+            candidate_root,
+            out,
+            item.path,
+            _owned_outputs(item),
+        )
 
     manifest = {
         "schema": BUILD_SCHEMA,
@@ -392,6 +546,7 @@ def load_manifest(
         )
     for item_path, row in rows.items():
         _validate_stored_row(root, item_path, row)
+        _row_outputs(row, _safe_relative(item_path))
     return data
 
 
@@ -415,10 +570,19 @@ def resolve_view(
             overlay,
             expected_scope="pr",
         )
+        resulting_items = dict(merged_items)
+        resulting_items.update(overlay_manifest["items"])
+        all_item_paths = tuple(
+            _safe_relative(path)
+            for path in resulting_items
+        )
         for item_path, row in overlay_manifest["items"].items():
-            _replace_tree(
-                overlay / item_path,
-                out / item_path,
+            _replace_stored_item(
+                overlay,
+                out,
+                _safe_relative(item_path),
+                row,
+                all_item_paths,
             )
             merged_items[item_path] = row
         source_commit = overlay_manifest.get(
@@ -456,10 +620,19 @@ def promote_overlay(
     shutil.copytree(main, out)
 
     merged_items = dict(main_manifest["items"])
+    resulting_items = dict(merged_items)
+    resulting_items.update(overlay_manifest["items"])
+    all_item_paths = tuple(
+        _safe_relative(path)
+        for path in resulting_items
+    )
     for item_path, row in overlay_manifest["items"].items():
-        _replace_tree(
-            overlay / item_path,
-            out / item_path,
+        _replace_stored_item(
+            overlay,
+            out,
+            _safe_relative(item_path),
+            row,
+            all_item_paths,
         )
         merged_items[item_path] = row
 
