@@ -452,3 +452,115 @@ Unknown item evidence schemas remain invalid.
 
 This compatibility applies only to stored durable state. A newly prepared
 candidate from the current library must not silently accept an obsolete schema.
+
+
+## 22. Local and reusable item configuration
+
+Configuration composition is resolved completely before planning or SCons
+translation. It must not perform source hashing, freshness checks or cache
+decisions.
+
+### Item-root path groups
+
+The existing list form for `watch` and step `inputs` remains
+repository-relative for backward compatibility.
+
+A mapping form may be used for new/local configuration:
+
+```yaml
+watch:
+  item:
+    - scpf/**
+    - tests/**
+  repo:
+    - scripts/model_contract_test.py
+```
+
+- `item` patterns are relative to the directory that contains the item's
+  `ci.yml`.
+- `repo` patterns are relative to the repository root.
+- after validation both groups are normalized to repository-relative patterns
+  in the loaded item model;
+- `item` and `repo` may be combined in one field;
+- the same forms apply to step `inputs`;
+- output paths remain relative to the item's build-output root exactly as
+  before.
+
+### Named templates
+
+Root `cad-ci.yml` may define repository-owned named templates:
+
+```yaml
+templates:
+  model:
+    kind: model
+    needs: [forge-package]
+    watch:
+      item: [scpf/**, model.yml, verification/**, tests/**]
+    steps:
+      - id: build
+        run: [python, build.py]
+        outputs: [model.json]
+```
+
+An item selects at most one template:
+
+```yaml
+template: model
+process: true
+```
+
+Template names and contents are consumer-owned. Generic CAD-CI assigns no
+meaning to names such as `model`, `reference` or tool names.
+
+The selected template provides a base item mapping. Item-local fields override
+template fields. Mapping values merge recursively; a local scalar or list
+replaces the corresponding template scalar or list.
+
+Templates may provide normal item fields including `kind`, `needs`,
+`watch`, `strategy` and `steps`. They may not provide `id`, `process`,
+`template`, `templates` or `children`.
+
+### Ancestor child defaults
+
+A `ci.yml` in an ancestor directory may contain a `children` mapping.
+That mapping provides defaults to descendant CI items and does not itself make
+the ancestor a discovered item.
+
+For one discovered item, CAD-CI walks ancestor directories from repository root
+toward the item's parent. Existing ancestor `ci.yml` files contribute their
+`children` mappings in that order. Nearer ancestors override farther
+ancestors.
+
+The effective configuration is composed in this order:
+
+1. determine the effective `template` from ancestor child defaults and the
+   local item;
+2. use that named root template as the base mapping, if present;
+3. merge ancestor child defaults from farthest to nearest;
+4. merge the local item mapping last.
+
+Mappings merge recursively. Scalars and lists replace previous values.
+
+`children` may provide normal inheritable item fields and `template`, but
+may not provide `id`, `templates` or another `children` block.
+
+The local item remains the final authority. Existing repositories without
+templates or ancestor child defaults behave exactly as before.
+
+### Nested item identity
+
+An explicit `id` remains supported and unchanged.
+
+When `id` is omitted, a nested item receives a deterministic ID derived from
+its repository-relative source path by replacing path separators with dashes.
+This allows an isolated child mini-project to use a short configuration without
+repeating its parent model name solely to obtain a unique ID.
+
+### Performance
+
+Configuration composition is a load-time mapping/path operation only.
+It must not walk source trees beyond the existing item discovery/input
+resolution work, hash source files, inspect build output or decide whether a
+target is current. Git selection and SCons remain the only selection/rebuild
+mechanisms.
