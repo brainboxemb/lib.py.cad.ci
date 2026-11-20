@@ -310,3 +310,24 @@ not overlap in either direction.
 
 This check uses normalized repository-relative paths only and does not inspect
 the filesystem.
+
+
+## Execution log boundary
+
+The SCons child process inherits the CAD-CI process stdout/stderr. The library
+does not capture the complete SCons output into memory before printing it.
+
+The SCons driver wraps the Python target function in an action with a custom
+display function. The display function uses only the logical manifest key:
+
+```text
+CAD CI run: <item-id>:<step-id>
+```
+
+The display function is presentation only. It does not participate in the
+target signature and does not replace the structured action observation or
+post-run report.
+
+Consumer subprocesses continue to inherit the SCons process streams, so their
+flushed stdout/stderr remains live. The final report/summary is still generated
+after SCons exits.
