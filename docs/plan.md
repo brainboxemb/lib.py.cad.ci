@@ -10,30 +10,72 @@ issues contain detail and history.
 `lib.py.cad.ci 0.8.4` is released at exact commit
 `4e033fd17e911b3feb92b1a34433b884ca788ab6`.
 
-The release adds explicit current-configuration membership to partial durable
-main updates so removed configured items can be deleted without confusing them
-with sparse unselected items.
+The current SCons engine is correct but explicitly serial in practice:
+`run_scons()` invokes SCons without a job count, so independent targets execute
+one at a time.
 
-The library proof is complete:
+A real selective Forge batch proved selection correctness but exposed the
+scaling cost:
 
-- selected current items are replaced from validated candidate output;
-- unselected current items remain unchanged;
-- items absent from explicit current processed configuration are removed;
-- nested ownership remains safe;
-- ambiguous legacy nested deletion fails rather than guessing.
+- 10 model items;
+- 40 independent reference child items;
+- no unrelated items;
+- ~3m21 SCons graph wall time;
+- only ~35s belonged to the ten model checks;
+- serial reference execution dominated the remainder.
+
+Simply adding `scons -j` is unsafe with the current dependency materialization:
+multiple consumers of one dependency can currently restore the same shared
+`build/<dependency>` paths.
 
 ## Current goal
 
-No active library implementation work.
+Complete #69: support explicit bounded parallel SCons execution without shared
+dependency-materialization races.
 
-The next step is outside this repository:
+Default remains `jobs=1`. Parallelism is opt-in until the released tool
+explicitly exposes the setting.
 
-1. update `tool.cad.ci` to exact released library 0.8.4;
-2. expose the complete current processed item set to `update_main`;
-3. release the tool;
-4. prove the behavior through `tool.cad.ci.test`;
-5. only then retry the Forge durable-main update and continue Pages.
+During a consumer action, direct dependencies use target-private snapshots
+materialized from their immutable final bundles. Public `build/<dependency>`
+output remains post-run materialized exactly as today.
+
+## Required proof
+
+- `run_repository(..., jobs=N)` validates a positive integer;
+- SCons receives the explicit job count;
+- default jobs=1 preserves current behavior;
+- each consumer step gets a private direct-dependency snapshot;
+- two parallel consumers of one dependency never write the same dependency
+  snapshot/output path;
+- a missing/tampered public dependency output does not create a consumer race;
+- previous-step output within one item remains ordered/materialized in the item
+  output root;
+- dependency context remains valid for the complete consumer command;
+- post-run public materialization/publication is unchanged;
+- engine schema invalidates prior target state because execution/materialization
+  semantics changed;
+- serial, parallel, failure, timeout and CacheDir evidence remain deterministic;
+- the complete library suite and extended SCons acceptance matrix pass.
+
+## Execution order
+
+1. Define parallel execution/materialization semantics in requirements/design.
+2. Extend acceptance before implementation.
+3. Implement target-private dependency snapshots and explicit jobs.
+4. Run complete library tests, including a parallel shared-dependency proof.
+5. Release the library.
+6. Pin/expose the release in `tool.cad.ci` as a thin `--jobs`/workflow input.
+7. Pass `tool.cad.ci.test` black-box parallel acceptance.
+8. Adopt bounded jobs in Forge and remeasure the 10-case reference graph.
+9. Only then start the remaining Qualification batch.
 
 ## Open issue assessment — 2026-11-20
 
-No open implementation issues remain after #65.
+| Issue | Status | Assessment |
+| --- | --- | --- |
+| #69 Support bounded parallel SCons execution with safe dependency materialization | now | Correct selective Forge batch shows serial reference execution is the dominant wall-time cost; generic SCons execution/materialization belongs here. |
+
+Immediate chain:
+
+`#69 library -> tool exposure -> external acceptance -> Forge remeasure -> remaining Qualification batch`.

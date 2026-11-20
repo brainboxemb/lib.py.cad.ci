@@ -729,3 +729,92 @@ Required sequences:
 
 10. configuration where parent output overlaps child item root:
    - fails during repository configuration loading.
+
+
+## Case 27 - bounded parallel consumers with one shared dependency
+
+Repository:
+
+```text
+library
+  step: build -> lib.txt
+
+consumer-a
+  needs: library
+  step: test -> a.txt
+
+consumer-b
+  needs: library
+  step: test -> b.txt
+```
+
+The two consumer commands deliberately overlap (for example by recording
+start/finish times around a short sleep) and read `lib.txt` from dependency
+context both before and after the overlap.
+
+Run with `jobs=2`.
+
+Required:
+
+1. library executes once;
+2. both consumers execute;
+3. consumer action intervals overlap;
+4. each consumer receives a different target-private dependency output root;
+5. both snapshots contain the exact library bytes for the entire command;
+6. public `build/library/lib.txt` is valid after the run;
+7. both consumer outputs/evidence are valid;
+8. run report records `jobs: 2`.
+
+Run the same repository with default jobs omitted.
+
+Required:
+
+- report records `jobs: 1`;
+- consumers do not overlap.
+
+## Case 28 - parallel restore from missing public dependency output
+
+Use Case 27 after one successful run.
+
+Delete public `build/library/lib.txt` while preserving SCons target bundles and
+state. Keep the two consumer inputs dirty so both consumer actions execute.
+
+Run with `jobs=2`.
+
+Required:
+
+- library target itself may remain CURRENT;
+- both consumers still receive valid private snapshots from the immutable final
+  dependency bundle;
+- no consumer writes/restores the shared public library path while its command
+  runs;
+- both consumers pass;
+- post-run active materialization restores public
+  `build/library/lib.txt`;
+- no bundle, snapshot or public output corruption occurs.
+
+## Case 29 - parallel ordering and failure
+
+Repository has:
+
+- one two-step item where step B depends on step A;
+- one independent item;
+- `jobs=2`.
+
+Required:
+
+- A and B never overlap;
+- the independent item may overlap A or B;
+- B sees A output through normal previous-step item materialization;
+- a failing independent action produces normal structured ERROR evidence;
+- successful target evidence remains complete;
+- SCons return/failure semantics remain the documented authority.
+
+## Parallel release gate addition
+
+Before release of bounded parallel execution:
+
+- Cases 27-29 are covered by library conformance tests;
+- the permanent external acceptance repository contains at least one
+  `jobs > 1` shared-dependency black-box case;
+- the released tool exposes jobs without implementing its own target loop.
