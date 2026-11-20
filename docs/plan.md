@@ -7,58 +7,33 @@ issues contain detail and history.
 
 ## Current status
 
-`lib.py.cad.ci 0.8.3` is released. The nested-item build-store ownership and
-live execution-output work are complete in that release.
+`lib.py.cad.ci 0.8.4` is released at exact commit
+`4e033fd17e911b3feb92b1a34433b884ca788ab6`.
 
-A real Forge main update exposed one remaining durable-store lifecycle gap:
+The release adds explicit current-configuration membership to partial durable
+main updates so removed configured items can be deleted without confusing them
+with sparse unselected items.
 
-- a configured item was removed from the repository;
-- its replacement nested items were selected, verified and published;
-- `update_main` preserved the removed item's old durable manifest row and bytes
-  because sparse replacement input alone does not identify repository deletion.
+The library proof is complete:
 
-The current tool passes only affected replacement items to `update_main`.
-The library therefore cannot distinguish an unselected current item from an item
-that no longer exists in current processed configuration.
+- selected current items are replaced from validated candidate output;
+- unselected current items remain unchanged;
+- items absent from explicit current processed configuration are removed;
+- nested ownership remains safe;
+- ambiguous legacy nested deletion fails rather than guessing.
 
 ## Current goal
 
-Complete the #65 release correction and publish 0.8.4. The implementation is merged; the first main release job correctly skipped because `VERSION` was not updated alongside `pyproject.toml`.
+No active library implementation work.
 
-A partial main update must preserve unselected current items, replace selected
-current items and remove durable state for items that are no longer part of the
-current processed repository configuration.
+The next step is outside this repository:
 
-Deletion must come from explicit current configuration, never from absence in a
-sparse candidate.
-
-## Required proof
-
-- the update API receives both selected replacements and the current processed
-  item set;
-- a removed stored item loses its manifest row and owned durable bytes;
-- a currently configured but unselected item remains byte-identical;
-- nested parent/child removal deletes only the removed item's owned outputs and
-  `.cad-ci` evidence;
-- a still-configured nested neighbor survives unchanged;
-- legacy rows without ownership metadata fail if deletion would be ambiguous in
-  a nested layout rather than guessing whole-tree ownership;
-- selected replacement behavior and existing build-store tests remain green.
-
-## Execution order
-
-1. Define removed-item durable-store behavior in requirements/design.
-2. Add build-store tests for removed flat and nested items.
-3. Implement explicit current-configuration cleanup in `update_main`.
-4. Run the complete library suite.
-5. Release 0.8.4 in the same issue PR.
-6. Pin/expose 0.8.4 in `tool.cad.ci`.
-7. Release the tool and pass `tool.cad.ci.test` black-box acceptance.
-8. Retry the Forge main update and confirm the stale aggregate disappears
-   before continuing Pages.
+1. update `tool.cad.ci` to exact released library 0.8.4;
+2. expose the complete current processed item set to `update_main`;
+3. release the tool;
+4. prove the behavior through `tool.cad.ci.test`;
+5. only then retry the Forge durable-main update and continue Pages.
 
 ## Open issue assessment — 2026-11-20
 
-| Issue | Status | Assessment |
-| --- | --- | --- |
-| #65 Remove deleted configuration items from durable main updates | now | Required generic build-store lifecycle fix exposed by the real Forge reference-item migration. |
+No open implementation issues remain after #65.
