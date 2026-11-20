@@ -7,39 +7,39 @@ issues contain detail and history.
 
 ## Current status
 
-The CAD-CI product release is `v0.6.0`.
+`lib.py.cad.ci 0.7.0` is released at commit
+`8955c74055105b06d6af69e0d2f82b6b1fbf575a`.
 
-Repository package CI currently consumes `tool.py.lib.ci 0.1.4`; released
-0.1.5 is externally accepted but not yet adopted here.
+External acceptance found one release compatibility defect: newly generated
+item evidence uses schema 2, while the durable build-store validator still
+accepts only schema 1.
 
 ## Current goal
 
-Complete #40: add explicit UTC timestamps to CAD-CI-owned run and step evidence
-so slow runs can be analysed from durable evidence without relying on GitHub UI
-timestamps.
+Complete #52 as a 0.7.1 patch release.
+
+Current candidate output must use the current item evidence schema. Existing
+stored durable output from the previous release must remain readable.
 
 ## Execution order
 
-1. Define exact evidence fields and UTC format in requirements/design.
-2. Add timestamps only where CAD-CI owns the event:
-   - run start/end;
-   - consumer action start/end when an action actually executes.
-3. Keep CURRENT/CACHE_RESTORED action timestamps absent.
-4. Preserve existing duration_seconds semantics.
-5. Add deterministic evidence tests.
-6. In the same maintenance PR, adopt exact released `tool.py.lib.ci 0.1.5` and use its `change_scope` output to suppress the repository release job for docs-only main pushes.
-7. Release the library once after green CI.
-8. Prove #46 with one later docs-only PR.
-9. Update the already-open tool.cad.ci maintenance branch to this exact library release before making one combined tool maintenance release.
+1. Define current-candidate versus legacy-stored evidence compatibility.
+2. Require schema 2 for newly prepared candidate items.
+3. Accept stored durable item evidence schema 1 or 2 during migration.
+4. Keep unknown schemas rejected.
+5. Add direct build-store regression tests for both paths.
+6. Release 0.7.1 after green CI.
+7. Update tool.cad.ci to a 0.12.1 exact library pin.
+8. Continue the existing tool.cad.ci.test PR against that patch stack.
 
 ## Open issue assessment — 2026-11-20
 
 | Issue | Status | Assessment |
 | --- | --- | --- |
-| #40 Add timestamps to CAD-CI run and step evidence | now | Current product-maintenance work; needed for later Forge runtime analysis. |
-| #46 Avoid full library test run for documentation-only changes | now | Adopt released tool.py.lib.ci 0.1.5 in this maintenance PR; keep the issue open until a later docs-only PR proves both main test and release jobs are skipped. |
+| #52 Accept current item evidence schema in build store without breaking legacy durable state | now | Release regression found by external acceptance; fix before continuing the 0.12.x stack acceptance. |
+| #46 Avoid full library test run for documentation-only changes | now | Separate docs-only real-consumer proof is already running in PR #51; do not mix product code into it. |
 
 ## Boundary
 
-Timestamps are evidence/observability only. They do not participate in SCons
-signatures, cache decisions, selection or rebuild state.
+This patch changes only build-store evidence compatibility. It does not change
+SCons execution, timing semantics, build manifest schema or selection.
