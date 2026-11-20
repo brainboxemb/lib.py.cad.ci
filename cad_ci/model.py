@@ -32,7 +32,8 @@ class Item:
     The tool treats `kind` as descriptive metadata only. Behaviour comes from
     the item's own config, processing state, dependencies, watch paths and ordered steps.
     `variables` is the validated, sorted repository-wide environment mapping
-    that applies to every command.
+    that applies to every command. `config_paths` lists source configuration
+    files whose changes select this item; they do not become ordinary step inputs.
     """
 
     id: str
@@ -45,5 +46,6 @@ class Item:
     steps: tuple[Step, ...]
     config_path: Path
     config_data: dict[str, Any]
+    config_paths: tuple[Path, ...] = ()
     process: bool = True
     variables: tuple[tuple[str, str], ...] = ()
