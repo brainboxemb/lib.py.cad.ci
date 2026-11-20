@@ -121,3 +121,32 @@ This permits a gradual durable-build migration: unaffected items may remain on
 legacy schema 1 while newly produced/replaced items use schema 2.
 
 Build manifest schema remains unchanged.
+
+
+## Hosted-runner incrementality
+
+The default hosted-runner path assumes no persistent workspace and no restored
+SCons cache.
+
+The execution boundary is:
+
+```text
+exact Git base/head
+  -> changed_files()
+  -> affected_items()
+  -> run_repository(selected)
+  -> SCons graph for selected items only
+```
+
+This deliberately separates two concerns:
+
+- Git/CAD-CI decides repository scope across workflow runs;
+- SCons decides execution within the requested scope using only state/cache that
+  is actually present on that runner.
+
+A fresh runner therefore treats requested targets as cold. This is correct and
+expected. Performance comes from not requesting unchanged sibling items.
+
+An optional CacheDir transport may later improve selected-item step reuse, but
+it is not required for correctness or for the primary performance contract and
+must not be assumed by configuration, evidence or tests.
