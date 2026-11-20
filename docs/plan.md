@@ -7,28 +7,32 @@ issues contain detail and history.
 
 ## Current goal
 
-Complete #42: release the merged `process` selection behavior as version 0.6.0.
+Complete #44 by bringing this plan in sync with the published 0.6.0 release.
 
-The product behavior from #39 is already merged through PR #41. This release
-change must contain no new CAD-CI behavior.
+The item-level `process` behavior from #39 is complete and released as
+`v0.6.0`. No product, requirement, design or implementation change is part of
+this work.
 
 ## Execution order
 
-1. Confirm the merged #39 implementation is green on main.
-2. Set VERSION and pyproject.toml to 0.6.0 and add the matching CHANGELOG entry.
-3. Pass the release PR tests and merge the release commit.
-4. Confirm the main release workflow publishes 0.6.0.
-5. Update this plan after release, then continue the released-stack path through
-   tool.cad.ci and tool.cad.ci.test before Forge consumes `process`.
+1. Record the actual post-0.6.0 repository state.
+2. Confirm the complete open issue list.
+3. Merge this plan-only correction and close #44.
+4. Leave #40 deferred while the released 0.6.0 stack is adopted by
+   `tool.cad.ci`, `tool.cad.ci.test` and Forge.
 
 ## Open issue assessment — 2026-11-20
 
 | Issue | Status | Assessment |
 | --- | --- | --- |
-| #42 Release lib.py.cad.ci 0.6.0 with process selection | now | Release-only follow-up to merged #39; required before tool.cad.ci can pin the new behavior. |
-| #40 Add timestamps to CAD-CI run and step evidence | later | Separate observability improvement; do not mix it into the process-selection release chain. |
+| #44 Update repository plan after 0.6.0 release | now | Plan-only correction required after the successful v0.6.0 release. |
+| #40 Add timestamps to CAD-CI run and step evidence | later | Separate observability improvement; keep it outside the current process-selection adoption chain. |
 
-## Boundary
+## Released state
 
-The `process` contract, design and implementation are already complete on main.
-This issue changes only release metadata and the current repository plan.
+`lib.py.cad.ci 0.6.0` is published from commit
+`dac8c5b5e1147a401730fda31f9bf9de2278c4ee`.
+
+The next work for the released `process` behavior is outside this repository:
+`tool.cad.ci` must pin this exact released library revision, then
+`tool.cad.ci.test` must prove the released stack before Forge consumes it.
