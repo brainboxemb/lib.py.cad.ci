@@ -4,8 +4,11 @@ from __future__ import annotations
 
 from pathlib import Path
 import json
+import os
 import re
 import shutil
+import subprocess
+import sys
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -183,6 +186,83 @@ assert (out / "build.json").read_text()
                 _outcomes(descriptive),
                 {"item:build": "CURRENT", "item:verify": "CURRENT"},
             )
+
+
+    def test_execution_output_streams_and_uses_concise_action_label(self):
+        """Expose live consumer output without leaking SCons function arguments."""
+
+        self.require_scons()
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            _write(root / "cad-ci.yml", "schema: 1\nitems: [item]\n")
+            _write(
+                root / "item" / "run.py",
+                "import os\n"
+                "import time\n"
+                "from pathlib import Path\n"
+                "print('consumer-start', flush=True)\n"
+                "time.sleep(0.5)\n"
+                "out = Path(os.environ['CAD_CI_OUTPUT'])\n"
+                "out.mkdir(parents=True, exist_ok=True)\n"
+                "(out / 'result.txt').write_text('ok\\n')\n"
+                "print('consumer-end', flush=True)\n",
+            )
+            _write(
+                root / "item" / "ci.yml",
+                "id: item\n"
+                "steps:\n"
+                "  - id: build\n"
+                "    inputs: [item/run.py]\n"
+                "    run: [python, run.py]\n"
+                "    outputs: [result.txt]\n",
+            )
+
+            script = (
+                "import sys\n"
+                "from pathlib import Path\n"
+                "from cad_ci.config import load_repository\n"
+                "from cad_ci.scons_engine import resolve_request, run_scons\n"
+                "repo = Path(sys.argv[1])\n"
+                "items = load_repository(repo)\n"
+                "request = resolve_request(items, {'item'})\n"
+                "run_scons(repo, items, request)\n"
+            )
+            env = os.environ.copy()
+            process = subprocess.Popen(
+                [sys.executable, "-c", script, str(root)],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+                bufsize=1,
+                env=env,
+            )
+            assert process.stdout is not None
+
+            lines: list[str] = []
+            while True:
+                line = process.stdout.readline()
+                if line:
+                    lines.append(line)
+                    if "consumer-start" in line:
+                        self.assertIsNone(
+                            process.poll(),
+                            "consumer output was buffered until process exit",
+                        )
+                        break
+                    continue
+                if process.poll() is not None:
+                    self.fail(
+                        "consumer-start was not visible before process exit"
+                    )
+
+            remainder, _ = process.communicate(timeout=10)
+            output = "".join(lines) + remainder
+            self.assertEqual(process.returncode, 0, output)
+            self.assertIn("CAD CI run: item:build", output)
+            self.assertIn("consumer-start", output)
+            self.assertIn("consumer-end", output)
+            self.assertNotIn("_execute_bundle(", output)
+            self.assertNotIn("item/run.py\"]", output)
 
     def test_non_processed_item_cannot_be_requested(self):
         self.require_scons()
