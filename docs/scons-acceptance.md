@@ -344,11 +344,14 @@ Expected:
 The final output tree after runs 3-6 must match bundle metadata exactly,
 including empty directories.
 
-## Case 14 - fresh runner CacheDir
+## Case 14 - explicit CacheDir restore capability
+
+This case proves optional SCons CacheDir capability. It does not represent the
+default hosted-runner path.
 
 Two independent targets A and B.
 
-After cold run, preserve only:
+After cold run, deliberately preserve only:
 - repository sources;
 - `.cache/cad-ci/scons/cache/`.
 
@@ -449,6 +452,29 @@ Git diff changes only A watched path.
 With B depending on A:
 - Git selection propagates according to `affected` strategy;
 - SCons then owns runtime dependency traversal.
+
+
+## Case 19A - fresh hosted runner without cache
+
+Repository has two independent items A and B with disjoint watched paths.
+
+Create two exact Git revisions:
+1. base revision contains both items;
+2. head revision changes only a source watched by A.
+
+Clone the head revision into a fresh workspace. The clone must contain neither
+`build/` nor `.cache/cad-ci/`.
+
+Expected sequence:
+
+1. `changed_files(base, head)` returns A's changed path;
+2. `affected_items()` returns only A;
+3. execute that selection through `run_repository()`;
+4. A's requested step is `BUILT`;
+5. B has no SCons outcome, no consumer action and no `build/B` output.
+
+This is the canonical hosted-runner incremental behavior. It must pass without
+restoring any SCons cache or target state.
 
 ## Case 20 - direct fan-in selection
 
