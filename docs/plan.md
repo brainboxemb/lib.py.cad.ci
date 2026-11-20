@@ -27,16 +27,17 @@ timestamps.
 3. Keep CURRENT/CACHE_RESTORED action timestamps absent.
 4. Preserve existing duration_seconds semantics.
 5. Add deterministic evidence tests.
-6. Release the library once after green CI.
-7. Update the already-open tool.cad.ci maintenance branch to this exact library
-   release before making one combined tool maintenance release.
+6. In the same maintenance PR, adopt exact released `tool.py.lib.ci 0.1.5` and use its `change_scope` output to suppress the repository release job for docs-only main pushes.
+7. Release the library once after green CI.
+8. Prove #46 with one later docs-only PR.
+9. Update the already-open tool.cad.ci maintenance branch to this exact library release before making one combined tool maintenance release.
 
 ## Open issue assessment — 2026-11-20
 
 | Issue | Status | Assessment |
 | --- | --- | --- |
 | #40 Add timestamps to CAD-CI run and step evidence | now | Current product-maintenance work; needed for later Forge runtime analysis. |
-| #46 Avoid full library test run for documentation-only changes | blocked | PR path is proven; remaining main-push optimization is released in tool.py.lib.ci 0.1.5 and must be adopted after the product-maintenance release. |
+| #46 Avoid full library test run for documentation-only changes | now | Adopt released tool.py.lib.ci 0.1.5 in this maintenance PR; keep the issue open until a later docs-only PR proves both main test and release jobs are skipped. |
 
 ## Boundary
 
