@@ -124,5 +124,69 @@ class PlannerTests(unittest.TestCase):
             self.assertEqual(selected, {"lib", "example", "qa", "qb"})
 
 
+    def test_nested_sibling_change_selects_only_that_item(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp)
+            (repo / "cad-ci.yml").write_text(
+                "schema: 1\n"
+                "items: [examples/a/*]\n"
+                "templates:\n"
+                "  reference:\n"
+                "    watch: {item: ['**/*.py']}\n"
+                "    steps: [{id: build, run: [python, model.py]}]\n",
+                encoding="utf-8",
+            )
+            model = repo / "examples" / "a"
+            model.mkdir(parents=True)
+            (model / "ci.yml").write_text(
+                "children: {template: reference}\n",
+                encoding="utf-8",
+            )
+            for name in ("build123d", "cadquery"):
+                child = model / name
+                child.mkdir()
+                (child / "ci.yml").write_text("{}\n", encoding="utf-8")
+                (child / "model.py").write_text("print('ok')\n", encoding="utf-8")
+
+            items = load_repository(repo)
+            selected = affected_items(
+                items,
+                ("examples/a/build123d/model.py",),
+            )
+            self.assertEqual(selected, {"examples-a-build123d"})
+
+    def test_ancestor_children_change_selects_all_descendants(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp)
+            (repo / "cad-ci.yml").write_text(
+                "schema: 1\n"
+                "items: [examples/a/*]\n"
+                "templates:\n"
+                "  reference:\n"
+                "    steps: [{id: build, run: [python, model.py]}]\n",
+                encoding="utf-8",
+            )
+            model = repo / "examples" / "a"
+            model.mkdir(parents=True)
+            (model / "ci.yml").write_text(
+                "children: {template: reference}\n",
+                encoding="utf-8",
+            )
+            for name in ("build123d", "cadquery"):
+                child = model / name
+                child.mkdir()
+                (child / "ci.yml").write_text("{}\n", encoding="utf-8")
+
+            items = load_repository(repo)
+            selected = affected_items(
+                items,
+                ("examples/a/ci.yml",),
+            )
+            self.assertEqual(
+                selected,
+                {"examples-a-build123d", "examples-a-cadquery"},
+            )
+
+
 if __name__ == "__main__":
     unittest.main()
