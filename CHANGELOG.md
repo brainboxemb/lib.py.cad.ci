@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.8.0
+
+- add item-root-relative watch/input path groups while preserving legacy repository-relative list syntax;
+- add repository-owned named item templates and deterministic ancestor child defaults;
+- track all effective item configuration sources for changed-file selection without turning them into ordinary SCons file inputs;
+- allow nested items to use deterministic path-derived IDs when no explicit ID is supplied;
+- keep planner, SCons rebuild/reuse and durable build semantics unchanged.
+
 ## 0.7.1
 
 - fix durable build-store validation for current item evidence schema 2;
