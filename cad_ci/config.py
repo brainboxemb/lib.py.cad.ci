@@ -8,6 +8,7 @@ Git-selection inputs.
 
 from __future__ import annotations
 
+from copy import deepcopy
 from pathlib import Path, PurePosixPath
 import re
 from typing import Any
@@ -77,28 +78,127 @@ def _variables(value: object, path: Path) -> tuple[tuple[str, str], ...]:
     return tuple(sorted(result))
 
 
-def _repo_patterns(
+def _merge_mapping(
+    base: dict[str, Any],
+    override: dict[str, Any],
+) -> dict[str, Any]:
+    """Recursively merge configuration mappings with later values winning."""
+
+    merged = deepcopy(base)
+    for key, value in override.items():
+        previous = merged.get(key)
+        if isinstance(previous, dict) and isinstance(value, dict):
+            merged[key] = _merge_mapping(previous, value)
+        else:
+            merged[key] = deepcopy(value)
+    return merged
+
+
+def _templates(value: object, path: Path) -> dict[str, dict[str, Any]]:
+    """Read repository-owned named item templates."""
+
+    if value is None:
+        return {}
+    if not isinstance(value, dict):
+        raise ConfigError(f"templates must be a mapping: {path}")
+
+    forbidden = {"id", "template", "templates"}
+    result: dict[str, dict[str, Any]] = {}
+    for name, template in value.items():
+        if not isinstance(name, str) or not _ID.fullmatch(name):
+            raise ConfigError(f"invalid template name: {path}: {name!r}")
+        if not isinstance(template, dict):
+            raise ConfigError(f"template must be a mapping: {path}: {name}")
+        invalid = sorted(forbidden.intersection(template))
+        if invalid:
+            raise ConfigError(
+                f"template {name} contains unsupported field(s): "
+                + ", ".join(invalid)
+            )
+        result[name] = deepcopy(template)
+    return result
+
+
+def _effective_item_config(
+    raw: dict[str, Any],
+    templates: dict[str, dict[str, Any]],
+    path: Path,
+) -> dict[str, Any]:
+    """Apply one optional root template to an item-local mapping."""
+
+    if "templates" in raw:
+        raise ConfigError(
+            f"templates are only allowed in root cad-ci.yml: {path}"
+        )
+
+    template_name = raw.get("template")
+    if template_name is None:
+        return deepcopy(raw)
+    if not isinstance(template_name, str) or not _ID.fullmatch(template_name):
+        raise ConfigError(f"template must be a valid name: {path}")
+    try:
+        template = templates[template_name]
+    except KeyError as exc:
+        raise ConfigError(
+            f"unknown template {template_name!r}: {path}"
+        ) from exc
+
+    local = deepcopy(raw)
+    local.pop("template", None)
+    return _merge_mapping(template, local)
+
+
+def _source_patterns(
     value: object,
     field: str,
     path: Path,
     *,
+    item_root: Path,
     optional: bool = False,
 ) -> tuple[str, ...] | None:
-    """Read safe repository-relative patterns used by watch/step inputs."""
+    """Read legacy repo patterns or explicit item/repo scoped patterns."""
 
     if value is None and optional:
         return None
-    patterns = _strings(value, field, path)
+
+    scoped: list[tuple[str, str]] = []
+    if isinstance(value, list):
+        for raw in _strings(value, field, path):
+            scoped.append(("repo", raw))
+    elif isinstance(value, dict):
+        invalid = sorted(set(value) - {"item", "repo"})
+        if invalid:
+            raise ConfigError(
+                f"{field} contains unsupported scope(s): {path}: "
+                + ", ".join(invalid)
+            )
+        for raw in _strings(value.get("item"), f"{field}.item", path):
+            scoped.append(("item", raw))
+        for raw in _strings(value.get("repo"), f"{field}.repo", path):
+            scoped.append(("repo", raw))
+    elif value is None:
+        scoped = []
+    else:
+        raise ConfigError(
+            f"{field} must be a list or item/repo mapping: {path}"
+        )
+
     normalized: list[str] = []
-    for raw in patterns:
+    for scope, raw in scoped:
         pattern = raw.replace("\\", "/")
         parsed = PurePosixPath(pattern)
-        if (
-            not pattern
-            or parsed.is_absolute()
-            or ".." in parsed.parts
-            or (parsed.parts and parsed.parts[0] in _GENERATED_ROOTS)
-        ):
+        if not pattern or parsed.is_absolute() or ".." in parsed.parts:
+            raise ConfigError(
+                f"{field} must stay inside source paths: {path}: {raw}"
+            )
+
+        if scope == "item":
+            pattern = (
+                PurePosixPath(item_root.as_posix()) / parsed
+            ).as_posix()
+            parsed = PurePosixPath(pattern)
+
+        if parsed.parts and parsed.parts[0] in _GENERATED_ROOTS:
             raise ConfigError(
                 f"{field} must stay inside source paths: {path}: {raw}"
             )
@@ -138,7 +238,12 @@ def _output_path(raw: str, path: Path, step_id: str) -> str:
     return parsed.as_posix()
 
 
-def _step(data: object, path: Path, default_timeout: int | None) -> Step:
+def _step(
+    data: object,
+    path: Path,
+    default_timeout: int | None,
+    item_root: Path,
+) -> Step:
     """Validate one step and convert it to the shared Step object."""
 
     if not isinstance(data, dict):
@@ -168,10 +273,11 @@ def _step(data: object, path: Path, default_timeout: int | None) -> Step:
         _output_path(output, path, step_id)
         for output in _strings(data.get("outputs"), "outputs", path)
     )
-    inputs = _repo_patterns(
+    inputs = _source_patterns(
         data.get("inputs"),
         "inputs",
         path,
+        item_root=item_root,
         optional="inputs" not in data,
     )
     timeout_seconds = _timeout_seconds(
@@ -219,6 +325,7 @@ def load_repository(repo: Path) -> dict[str, Item]:
         raise ConfigError(f"unsupported schema in {root_path}")
 
     variables = _variables(root.get("variables"), root_path)
+    templates = _templates(root.get("templates"), root_path)
 
     defaults = root.get("defaults", {})
     if defaults is None:
@@ -264,9 +371,10 @@ def load_repository(repo: Path) -> dict[str, Item]:
     for rel in item_paths:
         item_dir = repo / rel
         config_path = item_dir / "ci.yml"
-        data = _load_yaml(config_path)
+        raw = _load_yaml(config_path)
+        data = _effective_item_config(raw, templates, config_path)
 
-        item_id = data.get("id", rel.as_posix())
+        item_id = data.get("id", rel.as_posix().replace("/", "-"))
         if not isinstance(item_id, str) or not _ID.fullmatch(item_id):
             raise ConfigError(
                 "item id must use letters, numbers, dot, dash or underscore: "
@@ -306,7 +414,12 @@ def load_repository(repo: Path) -> dict[str, Item]:
         # Watch paths select top-level items from a Git diff. They are not the
         # fine-grained SCons dependency model; steps may declare inputs.
         watch_value = data.get("watch")
-        watch = _repo_patterns(watch_value, "watch", config_path)
+        watch = _source_patterns(
+            watch_value,
+            "watch",
+            config_path,
+            item_root=rel,
+        )
         if not watch:
             watch = (f"{rel.as_posix()}/**",)
 
@@ -316,7 +429,7 @@ def load_repository(repo: Path) -> dict[str, Item]:
                 f"steps must be a non-empty list: {config_path}"
             )
         steps = tuple(
-            _step(value, config_path, default_timeout)
+            _step(value, config_path, default_timeout, rel)
             for value in raw_steps
         )
         step_ids = [step.id for step in steps]
