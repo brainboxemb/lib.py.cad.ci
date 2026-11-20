@@ -8,6 +8,7 @@ Git-selection inputs.
 
 from __future__ import annotations
 
+from copy import deepcopy
 from pathlib import Path, PurePosixPath
 import re
 from typing import Any
@@ -77,28 +78,193 @@ def _variables(value: object, path: Path) -> tuple[tuple[str, str], ...]:
     return tuple(sorted(result))
 
 
-def _repo_patterns(
+def _merge_mapping(
+    base: dict[str, Any],
+    override: dict[str, Any],
+) -> dict[str, Any]:
+    """Recursively merge configuration mappings with later values winning."""
+
+    merged = deepcopy(base)
+    for key, value in override.items():
+        previous = merged.get(key)
+        if isinstance(previous, dict) and isinstance(value, dict):
+            merged[key] = _merge_mapping(previous, value)
+        else:
+            merged[key] = deepcopy(value)
+    return merged
+
+
+def _templates(value: object, path: Path) -> dict[str, dict[str, Any]]:
+    """Read repository-owned item templates from the root configuration."""
+
+    if value is None:
+        return {}
+    if not isinstance(value, dict):
+        raise ConfigError(f"templates must be a mapping: {path}")
+
+    forbidden = {"id", "process", "template", "templates", "children"}
+    result: dict[str, dict[str, Any]] = {}
+    for name, template in value.items():
+        if not isinstance(name, str) or not _ID.fullmatch(name):
+            raise ConfigError(f"invalid template name: {path}: {name!r}")
+        if not isinstance(template, dict):
+            raise ConfigError(f"template must be a mapping: {path}: {name}")
+        invalid = sorted(forbidden.intersection(template))
+        if invalid:
+            raise ConfigError(
+                f"template {name} contains unsupported field(s): "
+                + ", ".join(invalid)
+            )
+        result[name] = deepcopy(template)
+    return result
+
+
+def _children_mapping(
+    value: object,
+    path: Path,
+) -> dict[str, Any]:
+    """Validate one ancestor's defaults for descendant CI items."""
+
+    if value is None:
+        return {}
+    if not isinstance(value, dict):
+        raise ConfigError(f"children must be a mapping: {path}")
+
+    forbidden = {"id", "templates", "children"}
+    invalid = sorted(forbidden.intersection(value))
+    if invalid:
+        raise ConfigError(
+            "children contains unsupported field(s): " + ", ".join(invalid)
+        )
+    return deepcopy(value)
+
+
+def _ancestor_children(
+    repo: Path,
+    item_path: Path,
+    cache: dict[Path, dict[str, Any]],
+) -> tuple[dict[str, Any], tuple[Path, ...]]:
+    """Merge descendant defaults from ancestor ci.yml files in path order."""
+
+    merged: dict[str, Any] = {}
+    sources: list[Path] = []
+    for depth in range(1, len(item_path.parts)):
+        ancestor_dir = repo.joinpath(*item_path.parts[:depth])
+        config_path = ancestor_dir / "ci.yml"
+        if not config_path.is_file():
+            continue
+        data = cache.get(config_path)
+        if data is None:
+            data = _load_yaml(config_path)
+            cache[config_path] = data
+        if "children" not in data:
+            continue
+        children = _children_mapping(data.get("children"), config_path)
+        merged = _merge_mapping(merged, children)
+        sources.append(config_path.relative_to(repo))
+    return merged, tuple(sources)
+
+
+def _compose_item_config(
+    repo: Path,
+    item_path: Path,
+    raw: dict[str, Any],
+    templates: dict[str, dict[str, Any]],
+    cache: dict[Path, dict[str, Any]],
+) -> tuple[dict[str, Any], tuple[Path, ...]]:
+    """Compose template, ancestor defaults and local item configuration."""
+
+    config_path = repo / item_path / "ci.yml"
+    if "templates" in raw:
+        raise ConfigError(
+            f"templates are only allowed in root cad-ci.yml: {config_path}"
+        )
+    if "children" in raw:
+        _children_mapping(raw.get("children"), config_path)
+
+    inherited, inherited_sources = _ancestor_children(
+        repo,
+        item_path,
+        cache,
+    )
+    local_template = raw.get("template")
+    inherited_template = inherited.get("template")
+    template_name = (
+        local_template if local_template is not None else inherited_template
+    )
+    if template_name is not None:
+        if not isinstance(template_name, str) or not _ID.fullmatch(template_name):
+            raise ConfigError(f"template must be a valid name: {config_path}")
+        try:
+            base = templates[template_name]
+        except KeyError as exc:
+            raise ConfigError(
+                f"unknown template {template_name!r}: {config_path}"
+            ) from exc
+    else:
+        base = {}
+
+    inherited = deepcopy(inherited)
+    inherited.pop("template", None)
+    local = deepcopy(raw)
+    local.pop("template", None)
+    local.pop("children", None)
+
+    effective = _merge_mapping(base, inherited)
+    effective = _merge_mapping(effective, local)
+    config_sources = inherited_sources + (config_path.relative_to(repo),)
+    return effective, config_sources
+
+
+def _source_patterns(
     value: object,
     field: str,
     path: Path,
     *,
+    item_root: Path,
     optional: bool = False,
 ) -> tuple[str, ...] | None:
-    """Read safe repository-relative patterns used by watch/step inputs."""
+    """Read legacy repo patterns or explicit item/repo scoped patterns."""
 
     if value is None and optional:
         return None
-    patterns = _strings(value, field, path)
+
+    scoped: list[tuple[str, str]] = []
+    if isinstance(value, list):
+        for raw in _strings(value, field, path):
+            scoped.append(("repo", raw))
+    elif isinstance(value, dict):
+        invalid = sorted(set(value) - {"item", "repo"})
+        if invalid:
+            raise ConfigError(
+                f"{field} contains unsupported scope(s): {path}: "
+                + ", ".join(invalid)
+            )
+        for raw in _strings(value.get("item"), f"{field}.item", path):
+            scoped.append(("item", raw))
+        for raw in _strings(value.get("repo"), f"{field}.repo", path):
+            scoped.append(("repo", raw))
+    elif value is None:
+        scoped = []
+    else:
+        raise ConfigError(
+            f"{field} must be a list or item/repo mapping: {path}"
+        )
+
     normalized: list[str] = []
-    for raw in patterns:
+    for scope, raw in scoped:
         pattern = raw.replace("\\", "/")
         parsed = PurePosixPath(pattern)
-        if (
-            not pattern
-            or parsed.is_absolute()
-            or ".." in parsed.parts
-            or (parsed.parts and parsed.parts[0] in _GENERATED_ROOTS)
-        ):
+        if not pattern or parsed.is_absolute() or ".." in parsed.parts:
+            raise ConfigError(
+                f"{field} must stay inside source paths: {path}: {raw}"
+            )
+
+        if scope == "item":
+            pattern = (PurePosixPath(item_root.as_posix()) / parsed).as_posix()
+            parsed = PurePosixPath(pattern)
+
+        if parsed.parts and parsed.parts[0] in _GENERATED_ROOTS:
             raise ConfigError(
                 f"{field} must stay inside source paths: {path}: {raw}"
             )
@@ -138,7 +304,12 @@ def _output_path(raw: str, path: Path, step_id: str) -> str:
     return parsed.as_posix()
 
 
-def _step(data: object, path: Path, default_timeout: int | None) -> Step:
+def _step(
+    data: object,
+    path: Path,
+    default_timeout: int | None,
+    item_root: Path,
+) -> Step:
     """Validate one step and convert it to the shared Step object."""
 
     if not isinstance(data, dict):
@@ -168,10 +339,11 @@ def _step(data: object, path: Path, default_timeout: int | None) -> Step:
         _output_path(output, path, step_id)
         for output in _strings(data.get("outputs"), "outputs", path)
     )
-    inputs = _repo_patterns(
+    inputs = _source_patterns(
         data.get("inputs"),
         "inputs",
         path,
+        item_root=item_root,
         optional="inputs" not in data,
     )
     timeout_seconds = _timeout_seconds(
@@ -219,6 +391,8 @@ def load_repository(repo: Path) -> dict[str, Item]:
         raise ConfigError(f"unsupported schema in {root_path}")
 
     variables = _variables(root.get("variables"), root_path)
+    templates = _templates(root.get("templates"), root_path)
+    config_cache: dict[Path, dict[str, Any]] = {}
 
     defaults = root.get("defaults", {})
     if defaults is None:
@@ -264,9 +438,17 @@ def load_repository(repo: Path) -> dict[str, Item]:
     for rel in item_paths:
         item_dir = repo / rel
         config_path = item_dir / "ci.yml"
-        data = _load_yaml(config_path)
+        raw = _load_yaml(config_path)
+        config_cache[config_path] = raw
+        data, config_sources = _compose_item_config(
+            repo,
+            rel,
+            raw,
+            templates,
+            config_cache,
+        )
 
-        item_id = data.get("id", rel.as_posix())
+        item_id = data.get("id", rel.as_posix().replace("/", "-"))
         if not isinstance(item_id, str) or not _ID.fullmatch(item_id):
             raise ConfigError(
                 "item id must use letters, numbers, dot, dash or underscore: "
@@ -306,7 +488,12 @@ def load_repository(repo: Path) -> dict[str, Item]:
         # Watch paths select top-level items from a Git diff. They are not the
         # fine-grained SCons dependency model; steps may declare inputs.
         watch_value = data.get("watch")
-        watch = _repo_patterns(watch_value, "watch", config_path)
+        watch = _source_patterns(
+            watch_value,
+            "watch",
+            config_path,
+            item_root=rel,
+        )
         if not watch:
             watch = (f"{rel.as_posix()}/**",)
 
@@ -316,7 +503,7 @@ def load_repository(repo: Path) -> dict[str, Item]:
                 f"steps must be a non-empty list: {config_path}"
             )
         steps = tuple(
-            _step(value, config_path, default_timeout)
+            _step(value, config_path, default_timeout, rel)
             for value in raw_steps
         )
         step_ids = [step.id for step in steps]
@@ -337,6 +524,7 @@ def load_repository(repo: Path) -> dict[str, Item]:
             steps=steps,
             config_path=config_path,
             config_data=data,
+            config_paths=config_sources,
         )
 
     for item in items.values():
