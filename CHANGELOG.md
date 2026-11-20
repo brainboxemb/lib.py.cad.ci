@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.8.3
+
+- stream SCons and consumer-command output live instead of buffering the complete run;
+- replace internal SCons Python action/source dumps with concise logical target labels;
+- keep structured reports, evidence, selection, target signatures, cache and publication behavior unchanged.
+
 ## 0.8.2
 
 - make durable build preparation and replacement ownership-aware for nested item paths;
