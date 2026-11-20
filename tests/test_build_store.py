@@ -43,11 +43,11 @@ def configured_item(path: str, item_id: str) -> Item:
     )
 
 
-def evidence(item: Item, value: str) -> dict:
+def evidence(item: Item, value: str, *, schema: int = 2) -> dict:
     """Return complete-item SCons evidence tied to one current Item."""
 
     return {
-        "schema": 1,
+        "schema": schema,
         "engine": "scons",
         "engine_schema": 1,
         "item": item.id,
@@ -73,8 +73,14 @@ def manifest_row(item: Item, value: str, source_commit: str) -> dict:
     }
 
 
-def write_item(root: Path, item: Item, value: str) -> None:
-    """Create one complete candidate item with public SCons evidence."""
+def write_item(
+    root: Path,
+    item: Item,
+    value: str,
+    *,
+    schema: int = 2,
+) -> None:
+    """Create one complete item with public SCons evidence."""
 
     folder = root / item.path
     folder.mkdir(parents=True)
@@ -82,7 +88,7 @@ def write_item(root: Path, item: Item, value: str) -> None:
     evidence_path = folder / ".cad-ci" / "item.json"
     evidence_path.parent.mkdir(parents=True)
     evidence_path.write_text(
-        json.dumps(evidence(item, value)),
+        json.dumps(evidence(item, value, schema=schema)),
         encoding="utf-8",
     )
 
@@ -92,11 +98,12 @@ def write_main(
     rows: list[tuple[Item, str]],
     *,
     source_commit: str = "main-old",
+    evidence_schema: int = 2,
 ) -> None:
     """Create one valid complete durable main baseline."""
 
     for item, value in rows:
-        write_item(root, item, value)
+        write_item(root, item, value, schema=evidence_schema)
     manifest = {
         "schema": 1,
         "scope": "main",
@@ -344,6 +351,52 @@ class BuildStoreTests(unittest.TestCase):
             self.assertEqual(load_manifest(target)["pull_request"], 7)
             self.assertTrue(remove_pr(store=store, pull_request=7))
             self.assertFalse(remove_pr(store=store, pull_request=7))
+
+    def test_rejects_legacy_schema_for_new_candidate(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            candidate = root / "candidate"
+            write_item(candidate, self.item_a, "a", schema=1)
+
+            with self.assertRaisesRegex(
+                BuildStoreError,
+                "unsupported current item evidence schema",
+            ):
+                prepare_main(
+                    candidate_root=candidate,
+                    out=root / "main",
+                    items=[self.item_a],
+                    source_commit="main-1",
+                )
+
+    def test_load_manifest_accepts_legacy_stored_item_evidence(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            write_main(
+                root,
+                [(self.item_a, "a")],
+                evidence_schema=1,
+            )
+            manifest = load_manifest(root, expected_scope="main")
+            self.assertEqual(
+                manifest["items"]["cases/item-a"]["item_id"],
+                "item-a",
+            )
+
+    def test_load_manifest_rejects_unknown_stored_item_evidence_schema(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            write_main(root, [(self.item_a, "a")])
+            path = root / self.item_a.path / ".cad-ci/item.json"
+            data = json.loads(path.read_text(encoding="utf-8"))
+            data["schema"] = 99
+            path.write_text(json.dumps(data), encoding="utf-8")
+
+            with self.assertRaisesRegex(
+                BuildStoreError,
+                "unsupported stored item evidence schema",
+            ):
+                load_manifest(root, expected_scope="main")
 
     def test_rejects_candidate_without_complete_item_evidence(self):
         with tempfile.TemporaryDirectory() as tmp:
