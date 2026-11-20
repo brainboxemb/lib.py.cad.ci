@@ -43,8 +43,12 @@ def affected_items(
     for item in items.values():
         if not item.process:
             continue
-        item_config = (item.path / "ci.yml").as_posix()
-        if item_config in changed_files:
+        config_paths = (
+            item.config_paths
+            if item.config_paths
+            else (item.path / "ci.yml",)
+        )
+        if any(path.as_posix() in changed_files for path in config_paths):
             affected.add(item.id)
             continue
         if any(
