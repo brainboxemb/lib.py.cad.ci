@@ -77,6 +77,7 @@ Supported fields:
 ~~~yaml
 id: simple-case
 kind: example
+process: true
 
 needs:
   - tool
@@ -110,6 +111,11 @@ steps:
 
 Rules:
 - `kind` is descriptive only;
+- `process` is optional and defaults to `true` for compatibility;
+- `process: false` removes the item from automatic, full and explicit
+  execution;
+- an active item may not depend on a non-processed item;
+- `process` is selection state and is not part of a step target signature;
 - `watch` is for Git-level item selection;
 - `inputs` is for SCons rebuild dependencies;
 - omitted step `inputs` inherits the item's `watch`;
@@ -565,18 +571,27 @@ Normal SCons signature and CacheDir behaviour applies.
 - those step targets use NoCache;
 - dependency items retain their own policy.
 
-## 17. Git selection
+## 17. Git selection and process state
 
 `affected_items()` remains because Git selection decides repository scope, not
 build freshness.
 
+Only items with effective `process: true` participate.
+
 Given changed paths:
-- root `cad-ci.yml` change selects all items;
+- root `cad-ci.yml` change selects all processed items;
 - item `ci.yml` change selects that item;
 - `watch` matches select that item;
-- selected dependency changes propagate to dependants unless dependant is
-  `affected: direct`;
-- `affected: always` items are always selected.
+- selected dependency changes propagate to processed dependants unless the
+  dependant is `affected: direct`;
+- `affected: always` applies only to processed items;
+- a `process: false` item is never selected by its own config/watch changes,
+  dependency fan-out or a full run;
+- explicit `--item` execution of a `process: false` item fails clearly.
+
+Configuration loading rejects a processed item that directly depends on a
+`process: false` item. This keeps dependency closure deterministic before
+SCons starts.
 
 Runtime does not use the old custom topological execution plan. SCons receives
 selected final targets and owns dependency ordering.

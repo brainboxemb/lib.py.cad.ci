@@ -178,6 +178,26 @@ assert (out / "build.json").read_text()
                 {"item:build": "CURRENT", "item:verify": "CURRENT"},
             )
 
+    def test_non_processed_item_cannot_be_requested(self):
+        self.require_scons()
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            _write(root / "cad-ci.yml", "schema: 1\nitems: [item]\n")
+            _write(
+                root / "item" / "ci.yml",
+                "id: item\n"
+                "process: false\n"
+                "steps:\n"
+                "  - id: build\n"
+                "    inputs: []\n"
+                "    run: [python, -c, 'print(1)']\n",
+            )
+            items = load_repository(root)
+            with self.assertRaisesRegex(SConsRunError, "item is not processed"):
+                self.run_selected(root, {"item"})
+            with self.assertRaisesRegex(SConsRunError, "item is not processed"):
+                self.run_selected(root, {"item"}, item_id="item")
+
     def test_repository_variables_reach_commands_and_invalidate_targets(self):
         self.require_scons()
         with tempfile.TemporaryDirectory() as tmp:

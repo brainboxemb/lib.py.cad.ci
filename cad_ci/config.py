@@ -280,6 +280,10 @@ def load_repository(repo: Path) -> dict[str, Item]:
         if not isinstance(kind, str) or not kind:
             raise ConfigError(f"kind must be a string: {config_path}")
 
+        process = data.get("process", True)
+        if not isinstance(process, bool):
+            raise ConfigError(f"process must be true or false: {config_path}")
+
         strategy = data.get("strategy", {})
         if strategy is None:
             strategy = {}
@@ -324,6 +328,7 @@ def load_repository(repo: Path) -> dict[str, Item]:
             id=item_id,
             path=rel,
             kind=kind,
+            process=process,
             needs=_strings(data.get("needs"), "needs", config_path),
             watch=watch,
             affected=affected,
@@ -340,6 +345,17 @@ def load_repository(repo: Path) -> dict[str, Item]:
             raise ConfigError(
                 f"{item.id} needs unknown item(s): {', '.join(unknown)}"
             )
+        if item.process:
+            excluded = sorted(
+                dependency
+                for dependency in item.needs
+                if not items[dependency].process
+            )
+            if excluded:
+                raise ConfigError(
+                    f"processed item {item.id} needs non-processed item(s): "
+                    + ", ".join(excluded)
+                )
 
     _check_cycles(items)
     return items

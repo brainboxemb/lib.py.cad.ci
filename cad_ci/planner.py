@@ -25,18 +25,24 @@ def affected_items(
     `None` means an explicit full run. An empty tuple means no files changed.
     """
 
+    processed = {item.id for item in items.values() if item.process}
+
     if changed_files is None:
-        return set(items)
+        return processed
 
     # The root file controls item discovery. A change can add/remove items or
     # change folder patterns, so selecting every item is the safe behaviour.
     if "cad-ci.yml" in changed_files:
-        return set(items)
+        return processed
 
     affected: set[str] = {
-        item.id for item in items.values() if item.affected == "always"
+        item.id
+        for item in items.values()
+        if item.process and item.affected == "always"
     }
     for item in items.values():
+        if not item.process:
+            continue
         item_config = (item.path / "ci.yml").as_posix()
         if item_config in changed_files:
             affected.add(item.id)
@@ -54,6 +60,8 @@ def affected_items(
     while changed:
         changed = False
         for item in items.values():
+            if not item.process:
+                continue
             # direct items are selected only by their own watched/config paths,
             # an explicit --item request, or a full run. This is useful for
             # summary/aggregate items: a change in one dependency should not
@@ -71,6 +79,15 @@ def build_plan(
     selected: set[str],
 ) -> list[PlanEntry]:
     """Return dependencies before the selected items that need them."""
+
+    excluded = sorted(
+        item_id for item_id in selected
+        if item_id in items and not items[item_id].process
+    )
+    if excluded:
+        raise ValueError(
+            "cannot plan non-processed item(s): " + ", ".join(excluded)
+        )
 
     needed = set(selected)
 

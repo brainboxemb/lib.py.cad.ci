@@ -111,6 +111,9 @@ def resolve_request(
         except KeyError as exc:
             raise SConsRunError(f"unknown item: {item_id}") from exc
 
+        if not item.process:
+            raise SConsRunError(f"item is not processed: {item_id}")
+
         if step is not None:
             index = _step_index(item, step)
             key = step_key(item, item.steps[index])
@@ -133,10 +136,20 @@ def resolve_request(
 
         return RunRequest((final_key(item),), frozenset())
 
+    excluded = sorted(
+        item_id_value
+        for item_id_value in selected
+        if item_id_value in items and not items[item_id_value].process
+    )
+    if excluded:
+        raise SConsRunError(
+            "item is not processed: " + ", ".join(excluded)
+        )
+
     requested = tuple(
         final_key(item)
         for item_id_value, item in items.items()
-        if item_id_value in selected
+        if item_id_value in selected and item.process
     )
     return RunRequest(requested, frozenset())
 
@@ -219,6 +232,8 @@ def target_specs(
     specs: list[dict[str, Any]] = []
 
     for item in items.values():
+        if not item.process:
+            continue
         direct_dependencies = [
             _dependency_descriptor(items[dependency_id])
             for dependency_id in item.needs

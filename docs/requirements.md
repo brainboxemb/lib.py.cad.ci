@@ -14,6 +14,7 @@ The root `cad-ci.yml` owns repository-wide CI settings and item discovery.
 
 Each item `ci.yml` owns:
 - item ID and descriptive kind;
+- optional explicit `process` participation;
 - direct item dependencies;
 - coarse Git-selection paths;
 - affected-item strategy;
@@ -51,16 +52,48 @@ Repositories without `variables` retain the existing behavior.
 
 Git selection and build selection are deliberately different.
 
+### Item processing
+
+An item may explicitly declare:
+
+```yaml
+process: true
+```
+
+or:
+
+```yaml
+process: false
+```
+
+When omitted, `process` is `true` for backward compatibility.
+
+- `process: true` means the item participates in normal CAD-CI selection and
+  execution.
+- `process: false` means the item is excluded from changed-path selection,
+  dependency fan-out, full runs and explicit execution.
+- A processed item may not depend on a `process: false` item; this is an
+  invalid repository configuration.
+- A non-processed item may depend on processed items because it is itself not
+  executed.
+- Changing a shared processed dependency still propagates normally to every
+  processed dependant. `process` does not weaken dependency fan-out among
+  active items.
+
+`process` is repository-scope selection state. It does not participate in
+SCons target signatures because a non-processed item has no requested target.
+
 ### Git selection
 
-`watch` determines which top-level items are selected from a Git diff.
+`watch` determines which processed top-level items are selected from a Git diff.
 
 The supported affected strategies are:
 - `changed`: own watched changes and selected dependency changes select the item;
 - `direct`: only own watched changes select the item automatically;
 - `always`: every changed-file plan selects the item.
 
-This is coarse repository/PR selection only.
+This is coarse repository/PR selection only. Non-processed items are excluded
+before these affected-strategy rules are applied.
 
 ### Build selection
 

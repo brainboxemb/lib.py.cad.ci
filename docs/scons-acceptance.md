@@ -472,6 +472,45 @@ Explicitly request summary:
 - required a/b/c prerequisites are made current;
 - current siblings do not execute.
 
+## Case 20A - explicit process selection
+
+Repository:
+
+~~~text
+library
+model-a
+model-b
+~~~
+
+Configuration:
+- library: process omitted (effective true);
+- model-a: `process: true`, needs library;
+- model-b: `process: false`, needs library.
+
+Expected behavior:
+
+| Request/change | library | model-a | model-b |
+| --- | --- | --- | --- |
+| full run | requested as needed/current | requested | absent |
+| model-a watched change | dependency | selected | absent |
+| model-b watched change | absent | absent | absent |
+| library watched change | selected | selected by dependency fan-out | absent |
+| explicit model-b request | error before SCons | error | error |
+
+Additional configuration assertions:
+- omitted `process` is effective true;
+- non-boolean `process` is invalid;
+- processed item depending on `process: false` is invalid;
+- a non-processed item may depend on a processed item;
+- changing only `process: false -> true` in that item's `ci.yml` makes the
+  newly active item eligible and selects it from that config change;
+- changing `process: true -> false` excludes it immediately;
+- existing `affected: changed/direct/always` semantics remain unchanged among
+  processed items.
+
+This case is selection/configuration behavior. It must not add `process` to
+SCons target signatures.
+
 ## Case 21 - durable main build
 
 Given complete successful candidate items A and B:
