@@ -43,7 +43,15 @@ released `tool.cad.ci`, and finally verified end to end in
 
 Only after that exact released stack is green may Forge or CAD migrate.
 
+## Item processing
+
+Items may opt out of planning/execution with `process: false`. Omitted
+`process` is equivalent to `true` for compatibility. A processed item
+cannot depend on a non-processed item.
+
 ## Affected-item strategies
+
+Among processed items:
 
 - `changed`: own watched changes or selected dependency changes select item.
 - `direct`: only own watched/config changes select item automatically.
