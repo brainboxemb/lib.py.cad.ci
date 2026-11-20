@@ -124,5 +124,40 @@ class PlannerTests(unittest.TestCase):
             self.assertEqual(selected, {"lib", "example", "qa", "qb"})
 
 
+    def test_nested_template_sibling_change_selects_only_that_item(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp)
+            (repo / "cad-ci.yml").write_text(
+                "schema: 1\n"
+                "items: [examples/*/*]\n"
+                "templates:\n"
+                "  reference:\n"
+                "    watch: {item: ['**']}\n"
+                "    steps: [{id: build, run: [python, model.py]}]\n",
+                encoding="utf-8",
+            )
+            for name in ("build123d", "cadquery"):
+                folder = repo / "examples" / "attach-angle" / name
+                folder.mkdir(parents=True)
+                (folder / "ci.yml").write_text(
+                    "template: reference\n",
+                    encoding="utf-8",
+                )
+                (folder / "model.py").write_text(
+                    "print('ok')\n",
+                    encoding="utf-8",
+                )
+
+            items = load_repository(repo)
+            selected = affected_items(
+                items,
+                ("examples/attach-angle/build123d/model.py",),
+            )
+            self.assertEqual(
+                selected,
+                {"examples-attach-angle-build123d"},
+            )
+
+
 if __name__ == "__main__":
     unittest.main()

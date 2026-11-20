@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.8.0
+
+- add item-root-relative watch/input path groups while preserving legacy repository-relative list syntax;
+- add repository-owned named item templates in root cad-ci.yml;
+- add deterministic path-derived IDs for nested items when id is omitted;
+- keep Git changed-item selection, SCons execution and durable build semantics unchanged.
+
 ## 0.7.1
 
 - fix durable build-store validation for current item evidence schema 2;

@@ -338,5 +338,196 @@ class ConfigTests(unittest.TestCase):
                 load_repository(repo)
 
 
+    def test_item_scoped_paths_normalize_to_repository_paths(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp)
+            (repo / "cad-ci.yml").write_text(
+                "schema: 1\nitems: [examples/a]\n",
+                encoding="utf-8",
+            )
+            folder = repo / "examples" / "a"
+            folder.mkdir(parents=True)
+            (folder / "ci.yml").write_text(
+                "id: a\n"
+                "watch:\n"
+                "  item: [scpf/**, tests/**]\n"
+                "  repo: [scripts/shared.py]\n"
+                "steps:\n"
+                "  - id: build\n"
+                "    inputs:\n"
+                "      item: [model.py]\n"
+                "      repo: [scripts/shared.py]\n"
+                "    run: [python, model.py]\n",
+                encoding="utf-8",
+            )
+
+            item = load_repository(repo)["a"]
+            self.assertEqual(
+                item.watch,
+                (
+                    "examples/a/scpf/**",
+                    "examples/a/tests/**",
+                    "scripts/shared.py",
+                ),
+            )
+            self.assertEqual(
+                item.steps[0].inputs,
+                (
+                    "examples/a/model.py",
+                    "scripts/shared.py",
+                ),
+            )
+
+    def test_root_template_can_define_short_nested_item(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp)
+            (repo / "cad-ci.yml").write_text(
+                "schema: 1\n"
+                "items: [examples/*/*]\n"
+                "templates:\n"
+                "  reference-build123d:\n"
+                "    kind: reference\n"
+                "    watch:\n"
+                "      item: ['**']\n"
+                "      repo: [verification/reference_validation.py]\n"
+                "    strategy: {reuse: true}\n"
+                "    steps:\n"
+                "      - id: verify\n"
+                "        inputs:\n"
+                "          item: [model.py]\n"
+                "          repo: [verification/reference_validation.py]\n"
+                "        run: [python, model.py]\n"
+                "        outputs: [reference]\n",
+                encoding="utf-8",
+            )
+            child = repo / "examples" / "attach-angle" / "build123d"
+            child.mkdir(parents=True)
+            (child / "ci.yml").write_text(
+                "template: reference-build123d\n",
+                encoding="utf-8",
+            )
+
+            item = load_repository(repo)["examples-attach-angle-build123d"]
+            self.assertEqual(item.kind, "reference")
+            self.assertEqual(
+                item.watch,
+                (
+                    "examples/attach-angle/build123d/**",
+                    "verification/reference_validation.py",
+                ),
+            )
+            self.assertEqual(
+                item.steps[0].inputs,
+                (
+                    "examples/attach-angle/build123d/model.py",
+                    "verification/reference_validation.py",
+                ),
+            )
+            self.assertEqual(item.steps[0].outputs, ("reference",))
+
+    def test_local_template_override_merges_mappings_and_replaces_lists(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp)
+            (repo / "cad-ci.yml").write_text(
+                "schema: 1\n"
+                "items: [nested/item]\n"
+                "templates:\n"
+                "  base:\n"
+                "    watch:\n"
+                "      item: ['**']\n"
+                "      repo: [shared.py]\n"
+                "    strategy: {reuse: true, affected: changed}\n"
+                "    steps:\n"
+                "      - id: base\n"
+                "        run: [python, base.py]\n",
+                encoding="utf-8",
+            )
+            folder = repo / "nested" / "item"
+            folder.mkdir(parents=True)
+            (folder / "ci.yml").write_text(
+                "template: base\n"
+                "watch:\n"
+                "  item: [model.py]\n"
+                "strategy:\n"
+                "  reuse: false\n"
+                "steps:\n"
+                "  - id: local\n"
+                "    run: [python, local.py]\n",
+                encoding="utf-8",
+            )
+
+            item = load_repository(repo)["nested-item"]
+            self.assertEqual(
+                item.watch,
+                ("nested/item/model.py", "shared.py"),
+            )
+            self.assertFalse(item.reuse)
+            self.assertEqual(item.affected, "changed")
+            self.assertEqual([step.id for step in item.steps], ["local"])
+
+    def test_nested_implicit_ids_are_path_derived(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp)
+            (repo / "cad-ci.yml").write_text(
+                "schema: 1\nitems: [examples/*/*]\n",
+                encoding="utf-8",
+            )
+            for name in ("build123d", "cadquery"):
+                folder = repo / "examples" / "attach-angle" / name
+                folder.mkdir(parents=True)
+                (folder / "ci.yml").write_text(
+                    "steps: [{id: test, run: [python, -c, 'print(1)']}]\n",
+                    encoding="utf-8",
+                )
+
+            items = load_repository(repo)
+            self.assertEqual(
+                set(items),
+                {
+                    "examples-attach-angle-build123d",
+                    "examples-attach-angle-cadquery",
+                },
+            )
+
+    def test_unknown_template_is_rejected(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp)
+            (repo / "cad-ci.yml").write_text(
+                "schema: 1\nitems: [a]\n",
+                encoding="utf-8",
+            )
+            folder = repo / "a"
+            folder.mkdir()
+            (folder / "ci.yml").write_text(
+                "template: missing\n",
+                encoding="utf-8",
+            )
+
+            with self.assertRaisesRegex(ConfigError, "unknown template"):
+                load_repository(repo)
+
+    def test_template_cannot_define_item_id(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp)
+            (repo / "cad-ci.yml").write_text(
+                "schema: 1\n"
+                "items: [a]\n"
+                "templates:\n"
+                "  bad:\n"
+                "    id: fixed\n"
+                "    steps: [{id: test, run: [python, -c, 'print(1)']}]\n",
+                encoding="utf-8",
+            )
+            folder = repo / "a"
+            folder.mkdir()
+            (folder / "ci.yml").write_text(
+                "template: bad\n",
+                encoding="utf-8",
+            )
+
+            with self.assertRaisesRegex(ConfigError, "unsupported field"):
+                load_repository(repo)
+
+
 if __name__ == "__main__":
     unittest.main()
