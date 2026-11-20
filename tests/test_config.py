@@ -631,5 +631,43 @@ class ConfigTests(unittest.TestCase):
                 load_repository(repo)
 
 
+    def test_rejects_parent_output_overlapping_nested_item_root(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp)
+            (repo / "cad-ci.yml").write_text(
+                "schema: 1\n"
+                "items: [cases/model, cases/model/reference]\n",
+                encoding="utf-8",
+            )
+
+            parent = repo / "cases" / "model"
+            parent.mkdir(parents=True)
+            (parent / "ci.yml").write_text(
+                "id: parent\n"
+                "steps:\n"
+                "  - id: build\n"
+                "    run: [python, -c, 'print(1)']\n"
+                "    outputs: [reference/result.txt]\n",
+                encoding="utf-8",
+            )
+
+            child = parent / "reference"
+            child.mkdir()
+            (child / "ci.yml").write_text(
+                "id: child\n"
+                "steps:\n"
+                "  - id: build\n"
+                "    run: [python, -c, 'print(2)']\n"
+                "    outputs: [result.txt]\n",
+                encoding="utf-8",
+            )
+
+            with self.assertRaisesRegex(
+                ConfigError,
+                "item output overlaps nested item root",
+            ):
+                load_repository(repo)
+
+
 if __name__ == "__main__":
     unittest.main()
