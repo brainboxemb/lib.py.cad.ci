@@ -435,3 +435,20 @@ stop implementation and change/review the contract before continuing.
 
 A prepared Forge or CAD migration should need one implementation run and at
 most one consumer-specific correction/confirmation run.
+
+
+## 21. Durable item-evidence schema migration
+
+Build-store preparation validates freshly generated candidate output against the
+current complete-item evidence schema.
+
+For the 0.7.x line the current candidate schema is 2.
+
+Previously published durable build state may still contain complete-item
+evidence schema 1. Build-store read/resolve/update operations must continue to
+accept stored schema 1 while also accepting stored schema 2.
+
+Unknown item evidence schemas remain invalid.
+
+This compatibility applies only to stored durable state. A newly prepared
+candidate from the current library must not silently accept an obsolete schema.
