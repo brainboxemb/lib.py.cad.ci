@@ -150,3 +150,82 @@ expected. Performance comes from not requesting unchanged sibling items.
 An optional CacheDir transport may later improve selected-item step reuse, but
 it is not required for correctness or for the primary performance contract and
 must not be assumed by configuration, evidence or tests.
+
+
+## Local nested item composition
+
+Configuration composition is a loader concern only.
+
+The public YAML may be concise, but the rest of the library continues to
+consume the existing normalized model:
+
+```text
+root cad-ci.yml template
+        +
+local item ci.yml
+        ↓
+effective item mapping
+        ↓
+normalize item/repo path scopes
+        ↓
+existing Item / Step objects
+        ↓
+existing Git planner and SCons engine
+```
+
+### Scoped paths
+
+Legacy list syntax is passed through as repository-relative source patterns.
+
+For mapping syntax:
+
+```yaml
+inputs:
+  item: [model.py]
+  repo: [verification/reference_validation.py]
+```
+
+an item rooted at `examples/attach-angle/build123d` becomes internally:
+
+```text
+examples/attach-angle/build123d/model.py
+verification/reference_validation.py
+```
+
+The planner and SCons engine never need to understand the public `item` /
+`repo` distinction.
+
+### Template composition
+
+Root `cad-ci.yml` owns one optional `templates` mapping.
+
+Each template is a partial item mapping. One local item may name one template.
+The loader deep-copies the template and recursively merges the local item over
+it.
+
+Only mappings merge recursively. Lists and scalar values are replaced. This
+avoids field-specific append rules and makes the effective configuration easy
+to inspect.
+
+`id`, `template` and `templates` are composition-control fields and are
+not valid inside a template.
+
+Template `item` path groups are resolved against the consuming item root after
+composition.
+
+### Nested identity
+
+If `id` is absent, the loader converts the repository-relative item path to a
+stable ID by replacing path separators with hyphens.
+
+The existing duplicate-ID validation remains authoritative, including possible
+collisions between path-derived IDs.
+
+### Performance boundary
+
+Template expansion and scoped-path normalization are in-memory mapping/string
+operations performed once by `load_repository()`.
+
+They do not walk source contents beyond existing discovery, hash files, inspect
+durable output or inspect SCons state. Therefore they do not add a second
+incrementality mechanism.
