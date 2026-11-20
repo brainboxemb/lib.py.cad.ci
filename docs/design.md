@@ -246,3 +246,67 @@ operations performed once by `load_repository()`.
 They do not walk source contents beyond existing discovery, hash files, inspect
 durable output or inspect SCons state. Therefore they do not add a second
 incrementality mechanism.
+
+
+## Durable ownership for nested items
+
+The source item path remains the durable storage location; no new encoded item
+directory is introduced.
+
+The build store instead treats an item directory as a container for several
+independent ownership sets.
+
+For one `Item`, the owned set is:
+
+```text
+<item path>/<declared output 1>
+<item path>/<declared output 2>
+...
+<item path>/.cad-ci/
+```
+
+Everything else below `<item path>/` is outside that item's ownership.
+
+### Owned-path helpers
+
+Build-store preparation uses one helper that copies exactly the owned set from
+a candidate root to a scope root.
+
+Replacement uses one helper that:
+
+1. removes only the target item's declared output paths and `.cad-ci`;
+2. copies those exact paths from the source scope;
+3. leaves all other files/directories below the item path untouched;
+4. prunes only directories that become empty as a result of owned-path removal.
+
+Whole-tree `copytree` / rename replacement remains valid only for complete
+scope installation, never for replacing one item inside a scope.
+
+### Manifest rows
+
+New rows add `outputs`, a sorted list of declared consumer output paths.
+Build manifest schema remains 1 so existing generated branches are readable.
+
+Operations with current `Item` objects use configuration ownership directly.
+Operations that only receive stored scopes use row `outputs`.
+
+Rows without `outputs` are legacy. Before applying historical whole-tree
+replacement, the build store compares manifest item paths. If the legacy item
+is nested with another item in the resulting view, replacement is rejected as
+ambiguous.
+
+### Candidate isolation
+
+A local candidate tree may physically contain descendant item directories
+inside a parent item directory. Preparing a parent item must therefore never
+copy the complete candidate parent directory. Only its declared outputs and
+evidence are copied.
+
+### Configuration validation
+
+After all items are loaded, the configuration layer compares nested item source
+paths with parent declared outputs. A parent output and descendant item root may
+not overlap in either direction.
+
+This check uses normalized repository-relative paths only and does not inspect
+the filesystem.
