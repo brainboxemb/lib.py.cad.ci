@@ -38,7 +38,6 @@ class Item:
     id: str
     path: Path
     kind: str
-    process: bool
     needs: tuple[str, ...]
     watch: tuple[str, ...]
     affected: str
@@ -46,4 +45,5 @@ class Item:
     steps: tuple[Step, ...]
     config_path: Path
     config_data: dict[str, Any]
+    process: bool = True
     variables: tuple[tuple[str, str], ...] = ()
