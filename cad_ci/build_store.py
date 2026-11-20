@@ -104,6 +104,18 @@ def _remove_entry(path: Path) -> None:
         shutil.rmtree(path)
 
 
+def _prune_empty_parents(path: Path, stop: Path) -> None:
+    """Prune empty generated directories without crossing the scope root."""
+
+    current = path
+    while current != stop and current.is_dir():
+        try:
+            current.rmdir()
+        except OSError:
+            break
+        current = current.parent
+
+
 def _copy_entry(source: Path, target: Path) -> None:
     """Copy one validated owned file/directory to its exact target path."""
 
@@ -183,6 +195,50 @@ def _replace_stored_item(
             f"{item_path.as_posix()}"
         )
     _replace_tree(source_scope / item_path, target_scope / item_path)
+
+
+def _validate_removed_stored_item(
+    item_path: Path,
+    row: dict,
+    all_item_paths: tuple[Path, ...],
+) -> None:
+    """Validate that one removed durable item has unambiguous ownership."""
+
+    outputs = _row_outputs(row, item_path)
+    if outputs is not None:
+        return
+    if any(
+        _paths_nested(item_path, other)
+        for other in all_item_paths
+        if other != item_path
+    ):
+        raise BuildStoreError(
+            "legacy item ownership is ambiguous in nested layout: "
+            f"{item_path.as_posix()}"
+        )
+
+
+def _remove_stored_item(
+    target_scope: Path,
+    item_path: Path,
+    row: dict,
+    all_item_paths: tuple[Path, ...],
+) -> None:
+    """Remove one no-longer-configured item's owned durable state."""
+
+    _validate_removed_stored_item(item_path, row, all_item_paths)
+    outputs = _row_outputs(row, item_path)
+    target_item = target_scope / item_path
+
+    if outputs is None:
+        _remove_entry(target_item)
+        _prune_empty_parents(target_item.parent, target_scope)
+        return
+
+    for output in outputs:
+        _remove_entry(target_item / output)
+    _remove_entry(target_item / ".cad-ci")
+    _prune_empty_parents(target_item, target_scope)
 
 
 def _read_json(path: Path) -> dict:
@@ -314,11 +370,16 @@ def _item_record(
     }
 
 
-def _items(values: Iterable[Item], *, operation: str) -> tuple[Item, ...]:
+def _items(
+    values: Iterable[Item],
+    *,
+    operation: str,
+    allow_empty: bool = False,
+) -> tuple[Item, ...]:
     """Freeze and validate the item set supplied by the consumer config."""
 
     result = tuple(values)
-    if not result:
+    if not result and not allow_empty:
         raise BuildStoreError(f"{operation} requires at least one item")
 
     paths: set[Path] = set()
@@ -391,11 +452,68 @@ def update_main(
     out: Path,
     items: Iterable[Item],
     source_commit: str,
+    current_items: Iterable[Item] | None = None,
 ) -> dict:
-    """Replace selected validated item paths in one complete main baseline."""
+    """Update selected items and optionally remove no-longer-configured items."""
 
     main_manifest = load_manifest(main, expected_scope="main")
-    configured = _items(items, operation="main update")
+    configured = _items(
+        items,
+        operation="main update",
+        allow_empty=current_items is not None,
+    )
+    current = (
+        None
+        if current_items is None
+        else _items(
+            current_items,
+            operation="current main configuration",
+            allow_empty=True,
+        )
+    )
+
+    selected_paths = {item.path for item in configured}
+    previous_rows = dict(main_manifest["items"])
+    previous_paths = {
+        _safe_relative(path)
+        for path in previous_rows
+    }
+
+    removed_paths: set[Path] = set()
+    all_item_paths = tuple(previous_paths)
+    if current is not None:
+        current_paths = {item.path for item in current}
+        unknown_selected = selected_paths - current_paths
+        if unknown_selected:
+            names = ", ".join(
+                sorted(path.as_posix() for path in unknown_selected)
+            )
+            raise BuildStoreError(
+                f"selected item is not in current configuration: {names}"
+            )
+
+        missing_current = current_paths - (previous_paths | selected_paths)
+        if missing_current:
+            names = ", ".join(
+                sorted(path.as_posix() for path in missing_current)
+            )
+            raise BuildStoreError(
+                f"current main item has no baseline or replacement: {names}"
+            )
+
+        removed_paths = previous_paths - current_paths
+        all_item_paths = tuple(
+            sorted(
+                previous_paths | current_paths,
+                key=lambda path: path.as_posix(),
+            )
+        )
+        for item_path in removed_paths:
+            _validate_removed_stored_item(
+                item_path,
+                previous_rows[item_path.as_posix()],
+                all_item_paths,
+            )
 
     replacements = {
         item.path: _item_record(
@@ -410,7 +528,19 @@ def update_main(
         shutil.rmtree(out)
     shutil.copytree(main, out)
 
-    rows = dict(main_manifest["items"])
+    rows = dict(previous_rows)
+    for item_path in sorted(
+        removed_paths,
+        key=lambda path: (-len(path.parts), path.as_posix()),
+    ):
+        _remove_stored_item(
+            out,
+            item_path,
+            rows[item_path.as_posix()],
+            all_item_paths,
+        )
+        rows.pop(item_path.as_posix())
+
     for item in configured:
         _replace_owned_item(
             candidate_root,
@@ -419,6 +549,13 @@ def update_main(
             _owned_outputs(item),
         )
         rows[item.path.as_posix()] = replacements[item.path]
+
+    if current is not None:
+        current_keys = {item.path.as_posix() for item in current}
+        if set(rows) != current_keys:
+            raise BuildStoreError(
+                "main update did not produce the complete current item set"
+            )
 
     manifest = {
         "schema": BUILD_SCHEMA,
