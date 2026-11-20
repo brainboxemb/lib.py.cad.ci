@@ -15,6 +15,7 @@ import time
 
 from SCons.Script import (
     ARGUMENTS,
+    Action,
     AlwaysBuild,
     CacheDir,
     Command,
@@ -164,6 +165,12 @@ def _action_error(
     return 1
 
 
+def _action_label(target, source, env) -> str:
+    """Return the concise operator-facing label for one executed target."""
+
+    return f"CAD CI run: {env['CAD_CI_KEY']}"
+
+
 def _execute_bundle(target, source, env) -> int:
     """Materialize prerequisites, execute one step and write its bundle target."""
 
@@ -294,10 +301,11 @@ for key in active:
 bundle_nodes = {}
 for key, spec in SPECS.items():
     source_nodes = [str(ROOT / Path(value)) for value in spec["sources"]]
+    action = Action(_execute_bundle, strfunction=_action_label)
     node = Command(
         str(ROOT / Path(spec["bundle"])),
         source_nodes,
-        _execute_bundle,
+        action,
         CAD_CI_KEY=key,
     )
     Depends(
