@@ -783,13 +783,8 @@ def run_scons(
             f"CAD_CI_MANIFEST={MANIFEST_PATH.as_posix()}",
         ],
         cwd=repo,
-        text=True,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
         check=False,
     )
-    if completed.stdout:
-        print(completed.stdout, end="")
 
     report = write_report(
         repo,
