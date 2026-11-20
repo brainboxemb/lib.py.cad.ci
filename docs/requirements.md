@@ -97,8 +97,22 @@ before these affected-strategy rules are applied.
 
 ### Build selection
 
-Once top-level item targets are requested, SCons alone determines which step
-targets and prerequisites are dirty, current or cache-restorable.
+Once top-level item targets are requested, SCons owns execution ordering and
+local target state for those requested items.
+
+On a fresh hosted runner with no restored SCons state or CacheDir, every
+requested target is cold. SCons cannot infer validity from a previous workflow
+run that is not available on the runner.
+
+Therefore hosted-CI incrementality is primarily item-level:
+
+```text
+Git diff -> affected items -> request only those items
+```
+
+Unselected items are not evaluated by SCons and do not execute. Selected items
+may reuse prior steps only when valid SCons state/targets or an explicitly
+restored CacheDir are actually available.
 
 CAD CI must not run a second fingerprint/reuse engine beside SCons.
 
@@ -208,6 +222,10 @@ The internal bundle:
 - is invalidated by SCons input/action/spec signatures.
 
 SCons local state/cache lives below `.cache/cad-ci/` and is never published.
+
+The normal hosted-runner contract does not require that directory to survive
+between workflow runs. Cross-run CacheDir transport is an optional future
+optimization and must be explicit in workflow/tool design if introduced.
 
 Because bundles are cumulative, an item's final bundle represents every
 declared output of the complete item. After SCons makes a prerequisite bundle
