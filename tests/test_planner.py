@@ -159,5 +159,40 @@ class PlannerTests(unittest.TestCase):
             )
 
 
+    def test_parent_reference_contract_selects_nested_siblings(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp)
+            (repo / "cad-ci.yml").write_text(
+                "schema: 1\n"
+                "items: [examples/*/*]\n"
+                "templates:\n"
+                "  reference:\n"
+                "    watch:\n"
+                "      item: ['**', ../verification/reference_geometry.json]\n"
+                "    steps: [{id: build, run: [python, model.py]}]\n",
+                encoding="utf-8",
+            )
+            for name in ("build123d", "cadquery"):
+                folder = repo / "examples" / "attach-angle" / name
+                folder.mkdir(parents=True)
+                (folder / "ci.yml").write_text(
+                    "template: reference\n",
+                    encoding="utf-8",
+                )
+
+            items = load_repository(repo)
+            selected = affected_items(
+                items,
+                ("examples/attach-angle/verification/reference_geometry.json",),
+            )
+            self.assertEqual(
+                selected,
+                {
+                    "examples-attach-angle-build123d",
+                    "examples-attach-angle-cadquery",
+                },
+            )
+
+
 if __name__ == "__main__":
     unittest.main()

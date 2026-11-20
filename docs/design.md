@@ -195,6 +195,23 @@ verification/reference_validation.py
 The planner and SCons engine never need to understand the public `item` /
 `repo` distinction.
 
+Item-scoped patterns are lexically normalized against the consuming item path.
+Exact `..` segments pop one already-normalized path segment. Traversal fails
+when there is no repository-relative segment left to pop. No filesystem
+`resolve()`, symlink traversal or source lookup participates in this step.
+
+Example:
+
+```text
+item root: examples/attach-angle/build123d
+pattern:   ../verification/reference_geometry.json
+result:    examples/attach-angle/verification/reference_geometry.json
+```
+
+Legacy list syntax and `repo:` patterns do not use this normalizer and continue
+to reject `..` outright. After item normalization, the existing generated-root
+safety rule is applied to the resulting repository-relative pattern.
+
 ### Template composition
 
 Root `cad-ci.yml` owns one optional `templates` mapping.

@@ -148,6 +148,42 @@ def _effective_item_config(
     return _merge_mapping(template, local)
 
 
+def _item_source_pattern(
+    item_root: Path,
+    parsed: PurePosixPath,
+    field: str,
+    path: Path,
+    raw: str,
+) -> str:
+    """Normalize one item-relative pattern without escaping the repository."""
+
+    parts = list(PurePosixPath(item_root.as_posix()).parts)
+    for part in parsed.parts:
+        if part in ("", "."):
+            continue
+        if part == "..":
+            if not parts:
+                raise ConfigError(
+                    f"{field} must stay inside source paths: {path}: {raw}"
+                )
+            parts.pop()
+            continue
+        parts.append(part)
+
+    if not parts:
+        raise ConfigError(
+            f"{field} must stay inside source paths: {path}: {raw}"
+        )
+
+    pattern = PurePosixPath(*parts).as_posix()
+    normalized = PurePosixPath(pattern)
+    if normalized.parts and normalized.parts[0] in _GENERATED_ROOTS:
+        raise ConfigError(
+            f"{field} must stay inside source paths: {path}: {raw}"
+        )
+    return pattern
+
+
 def _source_patterns(
     value: object,
     field: str,
@@ -187,16 +223,24 @@ def _source_patterns(
     for scope, raw in scoped:
         pattern = raw.replace("\\", "/")
         parsed = PurePosixPath(pattern)
-        if not pattern or parsed.is_absolute() or ".." in parsed.parts:
+        if not pattern or parsed.is_absolute():
             raise ConfigError(
                 f"{field} must stay inside source paths: {path}: {raw}"
             )
 
         if scope == "item":
-            pattern = (
-                PurePosixPath(item_root.as_posix()) / parsed
-            ).as_posix()
+            pattern = _item_source_pattern(
+                item_root,
+                parsed,
+                field,
+                path,
+                raw,
+            )
             parsed = PurePosixPath(pattern)
+        elif ".." in parsed.parts:
+            raise ConfigError(
+                f"{field} must stay inside source paths: {path}: {raw}"
+            )
 
         if parsed.parts and parsed.parts[0] in _GENERATED_ROOTS:
             raise ConfigError(

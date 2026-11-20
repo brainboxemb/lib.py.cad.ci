@@ -529,5 +529,107 @@ class ConfigTests(unittest.TestCase):
                 load_repository(repo)
 
 
+    def test_item_scoped_parent_path_normalizes_inside_repository(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp)
+            (repo / "cad-ci.yml").write_text(
+                "schema: 1\nitems: [examples/a/build123d]\n",
+                encoding="utf-8",
+            )
+            folder = repo / "examples" / "a" / "build123d"
+            folder.mkdir(parents=True)
+            (folder / "ci.yml").write_text(
+                "watch:\n"
+                "  item: [model.py, ../verification/reference_geometry.json]\n"
+                "steps:\n"
+                "  - id: build\n"
+                "    inputs:\n"
+                "      item: [../../shared.py, ../verification/reference_geometry.json]\n"
+                "    run: [python, model.py]\n",
+                encoding="utf-8",
+            )
+
+            item = load_repository(repo)["examples-a-build123d"]
+            self.assertEqual(
+                item.watch,
+                (
+                    "examples/a/build123d/model.py",
+                    "examples/a/verification/reference_geometry.json",
+                ),
+            )
+            self.assertEqual(
+                item.steps[0].inputs,
+                (
+                    "examples/shared.py",
+                    "examples/a/verification/reference_geometry.json",
+                ),
+            )
+
+    def test_item_scoped_parent_path_cannot_escape_repository(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp)
+            (repo / "cad-ci.yml").write_text(
+                "schema: 1\nitems: [a]\n",
+                encoding="utf-8",
+            )
+            folder = repo / "a"
+            folder.mkdir()
+            (folder / "ci.yml").write_text(
+                "watch:\n"
+                "  item: [../../escape.py]\n"
+                "steps: [{id: build, run: [python, -c, 'print(1)']}]\n",
+                encoding="utf-8",
+            )
+
+            with self.assertRaisesRegex(ConfigError, "must stay inside source paths"):
+                load_repository(repo)
+
+    def test_repository_scoped_parent_path_remains_invalid(self):
+        cases = (
+            "watch: [../shared.py]\n",
+            "watch:\n  repo: [../shared.py]\n",
+        )
+        for watch in cases:
+            with self.subTest(watch=watch):
+                with tempfile.TemporaryDirectory() as tmp:
+                    repo = Path(tmp)
+                    (repo / "cad-ci.yml").write_text(
+                        "schema: 1\nitems: [a]\n",
+                        encoding="utf-8",
+                    )
+                    folder = repo / "a"
+                    folder.mkdir()
+                    (folder / "ci.yml").write_text(
+                        watch
+                        + "steps: [{id: build, run: [python, -c, 'print(1)']}]\n",
+                        encoding="utf-8",
+                    )
+
+                    with self.assertRaisesRegex(
+                        ConfigError,
+                        "must stay inside source paths",
+                    ):
+                        load_repository(repo)
+
+    def test_item_scoped_parent_path_cannot_enter_generated_root(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp)
+            (repo / "cad-ci.yml").write_text(
+                "schema: 1\nitems: [examples/a]\n",
+                encoding="utf-8",
+            )
+            folder = repo / "examples" / "a"
+            folder.mkdir(parents=True)
+            (folder / "ci.yml").write_text(
+                "watch:\n"
+                "  item: [../../build/generated.txt]\n"
+                "steps: [{id: build, run: [python, -c, 'print(1)']}]\n",
+                encoding="utf-8",
+            )
+
+            with self.assertRaisesRegex(ConfigError, "must stay inside source paths"):
+                load_repository(repo)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.8.1
+
+- allow explicit `item:` watch/input paths to traverse parent directories when lexical normalization remains inside the repository;
+- keep legacy list and explicit `repo:` paths rejecting parent traversal;
+- reject repository escapes and normalized generated-root paths;
+- keep planner, SCons and hosted-runner selection semantics unchanged.
+
 ## 0.8.0
 
 - add item-root-relative watch/input path groups while preserving legacy repository-relative list syntax;
