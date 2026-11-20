@@ -264,9 +264,21 @@ Step evidence records at least:
   `materialization_error`);
 - action-executed flag;
 - timeout/exit/duration where applicable;
+- `started_at` and `finished_at` for a consumer action that actually executed;
+- run-level `run_started_at` and `run_finished_at`;
 - target-spec digest;
 - target bundle digest;
 - declared output manifest.
+
+Timestamps use UTC ISO-8601 with a literal `Z` suffix and millisecond precision,
+for example `2026-11-20T08:30:12.345Z`.
+
+For `CURRENT` and `CACHE_RESTORED`, `started_at` and `finished_at` are
+`null`: CAD-CI must not invent action times when the consumer command did not
+execute.
+
+Complete item evidence also records `run_started_at` and `run_finished_at`
+for the run that produced or confirmed the complete item.
 
 Complete item evidence exists only when the final target was ensured
 successfully. It records at least:
