@@ -359,6 +359,39 @@ def _check_output_ownership(steps: tuple[Step, ...], path: Path) -> None:
             owned.append((step.id, current))
 
 
+def _check_nested_item_output_roots(items: dict[str, Item]) -> None:
+    """Reject parent outputs that overlap a nested item's source root."""
+
+    values = tuple(items.values())
+    for parent in values:
+        parent_parts = parent.path.parts
+        for child in values:
+            if parent is child:
+                continue
+            child_parts = child.path.parts
+            if (
+                len(parent_parts) >= len(child_parts)
+                or child_parts[: len(parent_parts)] != parent_parts
+            ):
+                continue
+
+            relative_child = PurePosixPath(
+                *child_parts[len(parent_parts) :]
+            )
+            for step in parent.steps:
+                for output in step.outputs:
+                    output_path = PurePosixPath(output)
+                    left = output_path.parts
+                    right = relative_child.parts
+                    common = min(len(left), len(right))
+                    if left[:common] == right[:common]:
+                        raise ConfigError(
+                            "item output overlaps nested item root: "
+                            f"{parent.id}:{output_path.as_posix()} and "
+                            f"{child.id}:{child.path.as_posix()}"
+                        )
+
+
 def load_repository(repo: Path) -> dict[str, Item]:
     """Discover and validate every configured CI item in repo."""
 
@@ -514,6 +547,7 @@ def load_repository(repo: Path) -> dict[str, Item]:
                     + ", ".join(excluded)
                 )
 
+    _check_nested_item_output_roots(items)
     _check_cycles(items)
     return items
 
