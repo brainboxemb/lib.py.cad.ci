@@ -699,3 +699,45 @@ Execution logging must remain useful on a long-running hosted CI job.
 - the final structured CAD-CI summary remains the authoritative concise result;
 - changing logging must not alter target signatures, dependency ordering,
   selection, CacheDir behavior, output bundles or evidence.
+
+
+## 25. Durable cleanup for removed configuration items
+
+A partial main update has two independent inputs:
+
+- the selected current items whose candidate output replaces durable state;
+- the complete current processed item set from repository configuration.
+
+The sparse candidate alone never implies deletion.
+
+For every previous durable main row:
+
+- if the item is still in the current processed item set and is unselected,
+  preserve its manifest row and owned bytes unchanged;
+- if the item is selected, replace its owned bytes and row with the validated
+  candidate result;
+- if the item is absent from the current processed item set, remove its durable
+  row and owned bytes.
+
+The resulting main manifest must contain exactly the current processed item
+paths. If a currently processed item is neither present in the previous main
+baseline nor supplied as a selected replacement, the update is incomplete and
+must fail instead of publishing a partial baseline.
+
+Removed-item cleanup uses the same ownership rules as nested durable
+replacement:
+
+- rows with current `outputs` ownership metadata remove only those declared
+  outputs plus the reserved `.cad-ci/` evidence directory;
+- still-configured ancestor/descendant item bytes are preserved;
+- an old row without ownership metadata may be removed as a whole tree only
+  when it is not nested with another durable/current item;
+- ambiguous legacy nested ownership fails clearly instead of guessing.
+
+The source commit of the resulting main manifest is the current update source
+commit even when some surviving item rows intentionally keep older item-level
+source provenance.
+
+This behavior belongs to the library. CLI/workflow layers may provide the
+selected and current item sets, but they must not decide which durable paths to
+delete.
