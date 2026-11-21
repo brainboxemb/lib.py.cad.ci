@@ -19,6 +19,7 @@ from cad_ci.build_store import (
     update_named,
 )
 from cad_ci.model import Item, Step
+from cad_ci.scons_engine import ENGINE_SCHEMA as SCONS_ENGINE_SCHEMA
 
 
 def configured_item(path: str, item_id: str) -> Item:
@@ -51,7 +52,7 @@ def evidence(item: Item, value: str, *, schema: int = 2) -> dict:
     return {
         "schema": schema,
         "engine": "scons",
-        "engine_schema": 1,
+        "engine_schema": SCONS_ENGINE_SCHEMA,
         "item": item.id,
         "status": "pass",
         "final_step": item.steps[-1].id,
@@ -68,7 +69,7 @@ def manifest_row(item: Item, value: str, source_commit: str) -> dict:
         "source_commit": source_commit,
         "item_id": item.id,
         "engine": "scons",
-        "engine_schema": 1,
+        "engine_schema": SCONS_ENGINE_SCHEMA,
         "final_step": state["final_step"],
         "final_target_spec_digest": state["final_target_spec_digest"],
         "final_bundle_sha256": state["final_bundle_sha256"],
@@ -136,6 +137,15 @@ class BuildStoreTests(unittest.TestCase):
     def setUp(self):
         self.item_a = configured_item("cases/item-a", "item-a")
         self.item_b = configured_item("cases/item-b", "item-b")
+
+    def test_build_store_uses_current_scons_engine_schema(self):
+        from cad_ci import build_store
+        from cad_ci import scons_engine
+
+        self.assertEqual(
+            build_store.ENGINE_SCHEMA,
+            scons_engine.ENGINE_SCHEMA,
+        )
 
     def test_prepare_main_bootstraps_complete_baseline(self):
         with tempfile.TemporaryDirectory() as tmp:
