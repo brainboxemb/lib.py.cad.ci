@@ -17,7 +17,7 @@ import subprocess
 from typing import Any
 
 from .model import Item, Step
-from .paths import PathDiscoveryError, files_for_patterns
+from .paths import PathDiscoveryError, files_for_patterns, source_inventory
 from .scons_bundle import (
     BundleError,
     bundle_sha256,
@@ -172,8 +172,13 @@ def _effective_inputs(item: Item, step: Step) -> tuple[str, ...]:
     return item.watch if step.inputs is None else step.inputs
 
 
-def _resolved_inputs(repo: Path, item: Item, step: Step) -> tuple[str, ...]:
-    """Resolve stable source paths for one step target."""
+def _resolved_inputs(
+    repo: Path,
+    item: Item,
+    step: Step,
+    candidates: tuple[Path, ...],
+) -> tuple[str, ...]:
+    """Resolve stable source paths for one active step from one shared inventory."""
 
     config_relative = item.config_path.relative_to(repo).as_posix()
     try:
@@ -181,6 +186,7 @@ def _resolved_inputs(repo: Path, item: Item, step: Step) -> tuple[str, ...]:
             repo,
             _effective_inputs(item, step),
             exclude=(config_relative,),
+            candidates=candidates,
         )
     except PathDiscoveryError as exc:
         raise SConsRunError(str(exc)) from exc
@@ -224,13 +230,75 @@ def _dependency_descriptor(
     }
 
 
+def _target_dependencies(
+    items: dict[str, Item],
+) -> dict[str, tuple[str, ...]]:
+    """Build the lightweight SCons key graph without resolving source files."""
+
+    dependencies: dict[str, tuple[str, ...]] = {}
+    for item in items.values():
+        if not item.process:
+            continue
+        for index, configured_step in enumerate(item.steps):
+            key = step_key(item, configured_step)
+            if index == 0:
+                dependencies[key] = tuple(
+                    final_key(items[dependency_id])
+                    for dependency_id in item.needs
+                )
+            else:
+                dependencies[key] = (
+                    step_key(item, item.steps[index - 1]),
+                )
+    return dependencies
+
+
+def _active_keys(
+    dependencies: dict[str, tuple[str, ...]],
+    requested: tuple[str, ...],
+) -> tuple[str, ...]:
+    """Return requested targets plus their dependency closure in config order."""
+
+    active: set[str] = set()
+
+    def visit(key: str) -> None:
+        if key in active:
+            return
+        try:
+            prerequisites = dependencies[key]
+        except KeyError as exc:
+            raise SConsRunError(f"unknown SCons target: {key}") from exc
+        for dependency in prerequisites:
+            visit(dependency)
+        active.add(key)
+
+    for key in requested:
+        visit(key)
+
+    return tuple(key for key in dependencies if key in active)
+
+
 def target_specs(
     repo: Path,
     items: dict[str, Item],
+    *,
+    active_keys: set[str] | None = None,
+    candidates: tuple[Path, ...] | None = None,
 ) -> list[dict[str, Any]]:
-    """Translate every configured step to one stable SCons target specification."""
+    """Translate active configured steps to stable SCons target specifications.
+
+    Direct callers without an active filter retain complete-graph behavior,
+    while source discovery still occurs only once for the invocation.
+    """
 
     repo = repo.resolve()
+    if active_keys is None:
+        active_keys = set(_target_dependencies(items))
+    if not active_keys:
+        return []
+    if candidates is None:
+        candidates = source_inventory(repo)
+
     specs: list[dict[str, Any]] = []
 
     for item in items.values():
@@ -244,8 +312,16 @@ def target_specs(
 
         for index, configured_step in enumerate(item.steps):
             key = step_key(item, configured_step)
-            resolved_inputs = _resolved_inputs(repo, item, configured_step)
             cumulative_outputs.extend(configured_step.outputs)
+            if key not in active_keys:
+                continue
+
+            resolved_inputs = _resolved_inputs(
+                repo,
+                item,
+                configured_step,
+                candidates,
+            )
 
             if index == 0:
                 dependencies = [
@@ -329,31 +405,6 @@ def target_specs(
     return specs
 
 
-def _active_keys(
-    specs: dict[str, dict[str, Any]],
-    requested: tuple[str, ...],
-) -> tuple[str, ...]:
-    """Return requested targets plus the dependency closure, in manifest order."""
-
-    active: set[str] = set()
-
-    def visit(key: str) -> None:
-        if key in active:
-            return
-        try:
-            spec = specs[key]
-        except KeyError as exc:
-            raise SConsRunError(f"unknown SCons target: {key}") from exc
-        for dependency in spec["dependencies"]:
-            visit(str(dependency))
-        active.add(key)
-
-    for key in requested:
-        visit(key)
-
-    return tuple(key for key in specs if key in active)
-
-
 def write_manifest(
     repo: Path,
     items: dict[str, Item],
@@ -361,12 +412,18 @@ def write_manifest(
     *,
     jobs: int = 1,
 ) -> Path:
-    """Write the private manifest consumed by the SCons driver."""
+    """Write the private manifest after resolving only the active target closure."""
 
     repo = repo.resolve()
-    specs_list = target_specs(repo, items)
-    specs = {str(spec["key"]): spec for spec in specs_list}
-    active = _active_keys(specs, request.requested_keys)
+    dependencies = _target_dependencies(items)
+    active = _active_keys(dependencies, request.requested_keys)
+    candidates = source_inventory(repo)
+    specs_list = target_specs(
+        repo,
+        items,
+        active_keys=set(active),
+        candidates=candidates,
+    )
 
     payload = {
         "schema": MANIFEST_SCHEMA,
@@ -388,7 +445,6 @@ def write_manifest(
         encoding="utf-8",
     )
     return path
-
 
 def _read_json(path: Path) -> dict[str, Any] | None:
     """Read one JSON object, returning None for missing/invalid observations."""
