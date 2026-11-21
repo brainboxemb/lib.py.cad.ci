@@ -7,74 +7,70 @@ issues contain detail and history.
 
 ## Current status
 
-`lib.py.cad.ci 0.8.4` is released at exact commit
-`4e033fd17e911b3feb92b1a34433b884ca788ab6`.
+`lib.py.cad.ci 0.9.0` is the current released library.
 
-The current SCons engine is correct but explicitly serial in practice:
-`run_scons()` invokes SCons without a job count, so independent targets execute
-one at a time.
+The existing durable publication model distinguishes only:
 
-A real selective Forge batch proved selection correctness but exposed the
-scaling cost:
+- complete `main` build state;
+- sparse `pr/<number>` overlays;
+- stable Pages root;
+- PR previews below `previews/pr-<number>`.
 
-- 10 model items;
-- 40 independent reference child items;
-- no unrelated items;
-- ~3m21 SCons graph wall time;
-- only ~35s belonged to the ten model checks;
-- serial reference execution dominated the remainder.
-
-Simply adding `scons -j` is unsafe with the current dependency materialization:
-multiple consumers of one dependency can currently restore the same shared
-`build/<dependency>` paths.
+Forge #572 needs two long-lived development integration lanes in addition to
+stable `main`. That requires a generic named complete-scope contract here
+rather than Forge-local generated-branch logic.
 
 ## Current goal
 
-Complete #69 and release the proven bounded parallel SCons execution as 0.9.0.
+Complete #72: support generic named complete build scopes and named Pages
+subtrees while preserving all existing main/PR behavior.
 
-Default remains `jobs=1`. Parallelism is opt-in until the released tool
-explicitly exposes the setting.
+The intended consumer model is:
 
-During a consumer action, direct dependencies use target-private snapshots
-materialized from their immutable final bundles. Public `build/<dependency>`
-output remains post-run materialized exactly as today.
+```text
+build/
+  main/
+  <named-scope-a>/
+  <named-scope-b>/
+
+gh-pages/
+  <stable root>
+  <named-subtree-a>/
+  <named-subtree-b>/
+```
+
+Names are caller-owned safe relative names. This library must not know
+`dev_cad`, `dev_ci` or any Forge-specific branch name.
 
 ## Required proof
 
-- `run_repository(..., jobs=N)` validates a positive integer;
-- SCons receives the explicit job count;
-- default jobs=1 preserves current behavior;
-- each consumer step gets a private direct-dependency snapshot;
-- two parallel consumers of one dependency never write the same dependency
-  snapshot/output path;
-- a missing/tampered public dependency output does not create a consumer race;
-- previous-step output within one item remains ordered/materialized in the item
-  output root;
-- dependency context remains valid for the complete consumer command;
-- post-run public materialization/publication is unchanged;
-- engine schema invalidates prior target state because execution/materialization
-  semantics changed;
-- serial, parallel, failure, timeout and CacheDir evidence remain deterministic;
-- the complete library suite and extended SCons acceptance matrix pass.
+- a named complete build scope uses the same reconciliation semantics as main;
+- updating one named scope preserves main and every unrelated sibling scope;
+- invalid/unsafe scope names are rejected;
+- generated-branch freshness and retry guarantees remain unchanged;
+- named Pages publication replaces only its subtree;
+- stable-root publication preserves configured named subtrees;
+- named publication cannot remove or overwrite stable root or siblings;
+- existing main and PR publication tests remain green.
 
 ## Execution order
 
-1. Define parallel execution/materialization semantics in requirements/design.
-2. Extend acceptance before implementation.
-3. Implement target-private dependency snapshots and explicit jobs.
-4. Run complete library tests, including a parallel shared-dependency proof.
-5. Release lib.py.cad.ci 0.9.0 from the exact green merge commit.
-6. Pin/expose the release in `tool.cad.ci` as a thin `--jobs`/workflow input.
-7. Pass `tool.cad.ci.test` black-box parallel acceptance.
-8. Adopt bounded jobs in Forge and remeasure the 10-case reference graph.
-9. Only then start the remaining Qualification batch.
+1. [#72, now] Define safe generic named-scope semantics.
+2. [#72] Generalize complete build-scope preparation/update/install.
+3. [#72] Add named Pages subtree installation/publication.
+4. [#72] Extend generated-branch tests for sibling preservation and races.
+5. [#72] Release the exact green library revision.
+6. [tool.cad.ci #80] Expose the released behavior through the thin CLI/workflow layer.
+7. [tool.cad.ci.test #60] Black-box accept named build and Pages scopes.
+8. [Forge #572] Introduce `dev_cad` and `dev_ci` only after the released stack is accepted.
 
-## Open issue assessment — 2026-11-20
+## Open issue assessment — 2026-11-21
 
 | Issue | Status | Assessment |
 | --- | --- | --- |
-| #69 Support bounded parallel SCons execution with safe dependency materialization | now | Correct selective Forge batch shows serial reference execution is the dominant wall-time cost; generic SCons execution/materialization belongs here. |
+| #72 Support named complete build scopes and named Pages subtrees | now | Required generic publication primitive for Forge #572 and any future long-lived integration lane. |
+| #71 Reduce fixed selective-run startup overhead before first SCons target | later | Independent performance work. Do not mix it into the named-scope migration. |
 
 Immediate chain:
 
-`#69 library -> tool exposure -> external acceptance -> Forge remeasure -> remaining Qualification batch`.
+`#72 library -> tool #80 -> acceptance #60 -> Forge #572`.
