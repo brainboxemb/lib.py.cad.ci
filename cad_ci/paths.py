@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from fnmatch import fnmatch
 from pathlib import Path
+from typing import Iterable
 
 
 _GENERATED_ROOTS = {".git", ".cache", "build"}
@@ -37,27 +38,49 @@ def _ignored_relative_path(relative: Path) -> bool:
     return "__pycache__" in relative.parts
 
 
+def source_inventory(repo: Path) -> tuple[Path, ...]:
+    """Enumerate source file/symlink candidates once for one execution run.
+
+    Symlinks stay in the inventory so a step that actually matches one can
+    reject it. Unselected steps never inspect their patterns against the
+    inventory and therefore cannot make an unrelated selective run fail.
+    """
+
+    repo = repo.resolve()
+    result: list[Path] = []
+    for candidate in repo.rglob("*"):
+        relative = candidate.relative_to(repo)
+        if _ignored_relative_path(relative):
+            continue
+        if candidate.is_symlink() or candidate.is_file():
+            result.append(candidate)
+    return tuple(sorted(set(result), key=lambda path: path.as_posix()))
+
+
 def files_for_patterns(
     repo: Path,
     patterns: tuple[str, ...],
     *,
     exclude: tuple[str, ...] = (),
+    candidates: Iterable[Path] | None = None,
 ) -> list[Path]:
     """Return stable regular source files matched by repository patterns.
 
     Root generated directories are ignored. A symlink that is actually matched
     is rejected instead of followed so target signatures cannot depend on
     content outside the repository-owned source tree.
+
+    When candidates is supplied, it must come from one repository source
+    inventory and is reused without another filesystem walk.
     """
 
+    repo = repo.resolve()
     excluded = {value.replace("\\", "/") for value in exclude}
+    inventory = source_inventory(repo) if candidates is None else candidates
     result: list[Path] = []
 
-    for candidate in repo.rglob("*"):
+    for candidate in inventory:
         relative = candidate.relative_to(repo)
-        if _ignored_relative_path(relative):
-            continue
-
         relative_text = relative.as_posix()
         if relative_text in excluded:
             continue
@@ -68,6 +91,8 @@ def files_for_patterns(
             raise PathDiscoveryError(
                 f"configured source input is a symlink: {relative_text}"
             )
+        # source_inventory() already limits candidates to regular files and
+        # symlinks. Callers may pass their own iterable, so retain this guard.
         if candidate.is_file():
             result.append(candidate)
 

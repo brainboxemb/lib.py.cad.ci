@@ -818,3 +818,43 @@ Before release of bounded parallel execution:
 - the permanent external acceptance repository contains at least one
   `jobs > 1` shared-dependency black-box case;
 - the released tool exposes jobs without implementing its own target loop.
+
+
+## Case 30 - selective startup resolves only the active closure
+
+Repository contains:
+- one selected item with two steps;
+- one direct dependency;
+- many unrelated processed items with their own input patterns;
+- one unrelated item whose input pattern matches a symlink.
+
+Run only the selected item.
+
+Required:
+
+1. requested keys resolve to the selected final step;
+2. active keys contain only the selected item's prerequisite steps plus its
+   direct dependency closure;
+3. repository source candidates are enumerated once for the invocation;
+4. full target specifications are emitted only for active keys;
+5. input patterns for unrelated items are never resolved;
+6. the unrelated matched symlink does not block this selective run;
+7. selected/dependency target signatures and normal SCons outcomes match the
+   pre-optimization semantics.
+
+Then request the unrelated symlink-owning item.
+
+Required:
+
+- its active input resolution rejects the matched symlink exactly as before.
+
+Run a complete graph.
+
+Required:
+
+- every processed target is active;
+- the repository source inventory is still enumerated once;
+- normal full-run output/evidence semantics are unchanged.
+
+The regression proof must assert structural work reduction (one inventory and
+active-only specs) rather than a fragile wall-clock threshold.
