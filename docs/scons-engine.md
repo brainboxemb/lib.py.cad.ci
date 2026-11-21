@@ -781,3 +781,40 @@ null for that failure.
 
 SCons owns parallel scheduling and dependency ordering. CAD-CI does not add a
 thread/process pool beside SCons.
+
+
+## 22. Active-closure-first manifest preparation
+
+Manifest preparation has two phases.
+
+### Phase 1 — lightweight target graph
+
+Build the logical target-key/dependency graph from already loaded `Item` and
+`Step` configuration only. This phase does not walk repository source files.
+
+Resolve the requested keys to their complete prerequisite closure while
+preserving repository/config order.
+
+### Phase 2 — active target specifications
+
+Create one source inventory for the repository source tree, excluding the
+existing generated roots. The inventory retains matched symlinks so active
+source validation can reject them without following them.
+
+Generate full target specifications only for keys in the active closure.
+For each active step:
+- filter the shared source inventory with that step's effective input patterns;
+- preserve the existing target signature fields and resolved source ordering;
+- preserve cumulative outputs, direct dependency descriptors and
+  `materialize_before` semantics.
+
+The SCons manifest contains only active target specifications. Requested keys
+remain the public top-level targets; active keys remain their prerequisite
+closure. SCons therefore receives the same executable graph without paying
+source-discovery/signature-preparation cost for unrelated targets.
+
+A full run naturally makes every processed target active and therefore retains
+the previous whole-graph behavior.
+
+No persistent source index is added. The inventory is per invocation and never
+participates in rebuild decisions outside the normal active target signatures.
