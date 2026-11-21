@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.9.1
+
+- add validated caller-named complete durable build scopes beside stable `main` and sparse PR overlays;
+- reuse complete-scope membership/reconciliation semantics for named scopes and preserve unrelated generated-branch siblings;
+- add isolated named Pages subtree publication;
+- require stable-root publication to receive the explicit named-subtree keep set so stale stable output is still reconciled;
+- reject unsafe or reserved build/Page scope names;
+- preserve existing main and PR publication behavior.
+
 ## 0.9.0
 
 - add explicit bounded SCons parallelism through a positive `jobs` execution option while preserving `jobs=1` as the compatibility default;
