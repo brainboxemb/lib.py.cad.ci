@@ -5,61 +5,47 @@ This file is the current work source of truth for `lib.py.cad.ci`.
 Requirements and permanent product behavior live in the normal documentation;
 issues contain detail and history.
 
-## Current status
+## Current released state
 
-`lib.py.cad.ci 0.9.2` is released at exact commit
-`3f688243f4ee65b1fa42f82adde5344fe5101775`.
+`lib.py.cad.ci 0.9.3` is released at exact commit
+`74486c441f1f2b170ff3dc06e0edcaf662fbec6b`.
 
-The released 0.9.2 stack is externally accepted through:
-- `tool.cad.ci 0.16.1` @
-  `4c6bb8b35009ef5008bd99134cf84b59fddc0b8a`;
-- completed `tool.cad.ci.test` #60 named-scope black-box acceptance.
+The release is consumed by:
+- `tool.cad.ci 0.16.2` @
+  `59e4c4d3f377f906b33bb2d1fee808f96c6fb1b9`;
+- external `tool.cad.ci.test` #62 / PR #63, which passed the complete
+  released-stack suite.
 
-The previous #74 engine-schema blocker is complete and is not active work.
+The external selective-startup case proved the 0.9.3 behavior through the public
+tool surface: a selected item remained runnable with an unrelated configured
+symlink, while explicitly selecting the symlink-owning item still failed safely.
+The same case observed a 0.446 s selected released-stack run; that value is
+diagnostic evidence, not a contractual threshold.
 
-## Current goal
+## Current work
 
-Complete #71: reduce fixed selective-run startup overhead before the first SCons
-target begins.
+No generic library implementation is active.
 
-Observed Forge evidence showed roughly 16 seconds between entering the generic
-CAD-CI run step and the first real SCons target, while the selected lightweight
-work itself completed in under one second.
+Closed #71 delivered the selective-startup optimization:
+- requested SCons target closure is resolved before source-input preparation;
+- one repository source inventory is shared across active steps;
+- inactive targets no longer contribute source-resolution work;
+- active target signatures and SCons ownership remain unchanged.
 
-The optimization belongs here. Do not add a Forge workaround and do not add a
-second execution/reuse engine.
+New generic CAD-CI work must start from a new issue, update this plan before
+implementation, and follow the owner-first release/acceptance chain.
 
-## Required proof
+## Next demand-driven priorities
 
-Before implementation, define the observable timing contract in:
-- `docs/requirements.md`;
-- `docs/scons-engine.md`;
-- `docs/scons-acceptance.md`.
+There is no queued library change required for Forge at this point.
 
-Then:
-- measure distinct generic pre-target phases;
-- identify the dominant fixed cost;
-- remove repeated/unnecessary work without changing selection or SCons
-  signatures;
-- keep SCons as the sole execution/rebuild/cache engine;
-- retain deterministic evidence and failure behavior;
-- add a regression/performance proof at the library boundary.
+If future consumer evidence exposes a generic defect or performance bottleneck:
+1. classify it in this repository first;
+2. update requirements/design/acceptance before SCons-engine code;
+3. implement and release the library;
+4. repin the thin tool;
+5. prove the exact released stack externally;
+6. only then update consumers.
 
-## Execution order
-
-1. [#71, now] Instrument and contract the pre-target phases.
-2. [#71] Identify and remove the dominant fixed overhead.
-3. [#71] Run complete library tests plus focused timing acceptance.
-4. Release only from the exact green main revision if behavior changed.
-5. Repin `tool.cad.ci` only if a new library release is required.
-6. Prove the released stack externally before Forge adopts it.
-
-## Open issue assessment — 2026-11-21
-
-| Issue | Status | Assessment |
-| --- | --- | --- |
-| #71 Reduce fixed selective-run startup overhead before first SCons target | **now** | Directly explains slow small/selective consumer runs; generic library-owned measurement and optimization. |
-
-Immediate chain:
-
-`#71 measure -> contract -> optimize -> library proof -> released-stack acceptance`.
+Bounded parallel execution is already library-owned and released. Exposing its
+`jobs` input through the thin tool remains tool.cad.ci #76, not library work.
