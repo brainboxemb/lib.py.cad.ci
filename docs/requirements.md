@@ -333,7 +333,13 @@ Local candidate output mirrors source item paths.
 
 The durable generated `build` branch contains:
 - `main/`: complete accepted baseline;
+- optional caller-named complete scopes such as `dev/`;
 - `pr/<number>/`: sparse overlay containing only selected PR item paths.
+
+Named complete scopes use the same validated item membership, replacement and
+deletion-reconciliation semantics as `main`. A named scope is one safe
+generated-branch path segment and may not be `main`, `pr`, absolute or
+traversing.
 
 Publication validates successful complete-item evidence from
 `.cad-ci/item.json`.
@@ -341,20 +347,27 @@ Publication validates successful complete-item evidence from
 A durable item manifest row records source provenance and evidence digests; it
 does not copy SCons' internal dependency database.
 
-Updating main replaces only selected item paths. Resolving a PR view starts from
-main and overlays the sparse PR paths. Removing one PR changes only that PR
-namespace.
+Updating one complete scope replaces only selected item paths inside that scope
+and preserves every sibling scope. Resolving a PR view starts from main and
+overlays the sparse PR paths. Removing one PR changes only that PR namespace.
 
 ## 13. Pages
 
 Stable Pages content lives at the root of `gh-pages`. PR previews live under
-`previews/pr-<number>/`.
+`previews/pr-<number>/`. Consumers may additionally publish complete sites to
+safe named top-level subtrees.
 
-Updating stable Pages preserves previews. Updating or deleting one preview
-preserves stable content and all other previews.
+Updating one named subtree replaces only that subtree and preserves stable
+content, PR previews and every sibling named subtree. Updating stable Pages
+preserves PR previews and the explicit set of named subtrees supplied by the
+caller; everything else in the stable root is reconciled from the new site so
+obsolete stable files cannot survive accidentally.
+
+Named subtree values are one safe path segment and may not be `.git` or
+`previews`.
 
 Generic code owns branch/directory mechanics. The consumer owns site content,
-styling and domain text.
+styling, the chosen named-subtree keep set and domain text.
 
 ## 14. Generated branch publication
 
