@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.9.3
+
+- prepare only the requested SCons target/dependency closure during selective
+  runs instead of resolving every processed repository target first;
+- enumerate repository source candidates once per non-empty SCons invocation and
+  reuse that inventory across active step input matching;
+- keep active target specifications/signatures identical to complete-graph
+  preparation and preserve SCons as the sole rebuild/cache engine;
+- keep matched-symlink safety scoped to targets that are actually active, so an
+  unrelated inactive item cannot block a selective run;
+- add structural acceptance proving one inventory scan and active-only manifest
+  preparation instead of relying on a noisy wall-clock threshold.
+
 ## 0.9.2
 
 - align durable build-store candidate validation with the current SCons engine
