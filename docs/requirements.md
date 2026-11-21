@@ -807,3 +807,30 @@ not change durable build-store or Pages/publication input.
 
 Changing only the requested job count must not invalidate otherwise current
 SCons targets.
+
+
+## 27. Selective-run startup cost
+
+A non-empty selective run must prepare only the SCons target closure that can
+actually execute.
+
+- resolve requested target keys and their prerequisite closure from configuration
+  metadata before resolving source files;
+- do not resolve step input globs for unselected items or for steps outside the
+  requested dependency closure;
+- enumerate repository source candidates at most once for one SCons invocation
+  and reuse that inventory for every active step;
+- an empty run performs no source-tree inventory;
+- a full run may resolve every processed target because every processed item is
+  active;
+- active target signatures, dependency ordering, output bundles, evidence and
+  SCons dirty/current decisions must remain identical for the same repository
+  content and configuration.
+
+Runtime source-safety validation applies to active targets. For example, a
+matched symlink in an unselected item's inputs does not block an unrelated
+selective run, but selecting that item (or running the complete graph) must
+still reject the matched symlink.
+
+This is startup optimization only. It must not introduce a second selection,
+fingerprint, cache or execution engine.
