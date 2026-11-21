@@ -10,11 +10,13 @@ from cad_ci.build_store import (
     install_scope,
     load_manifest,
     prepare_main,
+    prepare_named,
     prepare_overlay,
     promote_overlay,
     remove_pr,
     resolve_view,
     update_main,
+    update_named,
 )
 from cad_ci.model import Item, Step
 
@@ -977,6 +979,107 @@ class BuildStoreTests(unittest.TestCase):
                     overlay=overlay,
                     out=root / "resolved",
                 )
+
+    def test_named_complete_scopes_are_independent_and_reconciled(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            initial = root / "initial"
+            write_item(initial, self.item_a, "old-a")
+            write_item(initial, self.item_b, "old-b")
+
+            main = root / "main-candidate"
+            prepare_main(
+                candidate_root=initial,
+                out=main,
+                items=[self.item_a, self.item_b],
+                source_commit="main-1",
+            )
+            dev_a = root / "dev-a-candidate"
+            manifest = prepare_named(
+                candidate_root=initial,
+                out=dev_a,
+                items=[self.item_a, self.item_b],
+                source_commit="dev-a-1",
+                name="dev_a",
+            )
+            dev_b = root / "dev-b-candidate"
+            prepare_named(
+                candidate_root=initial,
+                out=dev_b,
+                items=[self.item_a, self.item_b],
+                source_commit="dev-b-1",
+                name="dev_b",
+            )
+            self.assertEqual(manifest["scope"], "named")
+            self.assertEqual(manifest["name"], "dev_a")
+
+            store = root / "store"
+            store.mkdir()
+            install_scope(candidate=main, store=store, scope="main")
+            install_scope(
+                candidate=dev_a,
+                store=store,
+                scope="named",
+                scope_name="dev_a",
+            )
+            install_scope(
+                candidate=dev_b,
+                store=store,
+                scope="named",
+                scope_name="dev_b",
+            )
+
+            replacement = root / "replacement"
+            write_item(replacement, self.item_a, "new-a")
+            updated = root / "updated-dev-a"
+            update_named(
+                named=store / "dev_a",
+                candidate_root=replacement,
+                out=updated,
+                items=[self.item_a],
+                current_items=[self.item_a, self.item_b],
+                source_commit="dev-a-2",
+                name="dev_a",
+            )
+            install_scope(
+                candidate=updated,
+                store=store,
+                scope="named",
+                scope_name="dev_a",
+            )
+
+            self.assertEqual(
+                (store / "dev_a/cases/item-a/result.txt").read_text(),
+                "new-a",
+            )
+            self.assertEqual(
+                (store / "dev_a/cases/item-b/result.txt").read_text(),
+                "old-b",
+            )
+            self.assertEqual(
+                (store / "dev_b/cases/item-a/result.txt").read_text(),
+                "old-a",
+            )
+            self.assertEqual(
+                (store / "main/cases/item-a/result.txt").read_text(),
+                "old-a",
+            )
+
+    def test_named_scope_rejects_unsafe_or_reserved_names(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            candidate = root / "candidate"
+            write_item(candidate, self.item_a, "a")
+            for name in ("main", "pr", "../escape", "a/b", ""):
+                with self.subTest(name=name):
+                    with self.assertRaises(BuildStoreError):
+                        prepare_named(
+                            candidate_root=candidate,
+                            out=root / "out",
+                            items=[self.item_a],
+                            source_commit="head",
+                            name=name,
+                        )
 
 
 if __name__ == "__main__":
