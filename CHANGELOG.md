@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.9.2
+
+- align durable build-store candidate validation with the current SCons engine
+  schema 2 produced by the same library;
+- derive the build-store schema expectation from
+  `cad_ci.scons_engine.ENGINE_SCHEMA` instead of maintaining a duplicate
+  literal;
+- update durable-publication test fixtures and add an explicit cross-module
+  regression guard;
+- leave named-scope, main/PR, Pages and generated-branch semantics unchanged.
+
 ## 0.9.1
 
 - add validated caller-named complete durable build scopes beside stable `main` and sparse PR overlays;

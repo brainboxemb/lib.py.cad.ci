@@ -20,6 +20,7 @@ import tempfile
 from typing import Iterable
 
 from .model import Item
+from .scons_engine import ENGINE_SCHEMA
 
 
 MANIFEST = "build.json"
@@ -28,7 +29,6 @@ BUILD_SCHEMA = 1
 CURRENT_EVIDENCE_SCHEMA = 2
 READABLE_STORED_EVIDENCE_SCHEMAS = frozenset({1, 2})
 ENGINE = "scons"
-ENGINE_SCHEMA = 1
 
 
 class BuildStoreError(RuntimeError):

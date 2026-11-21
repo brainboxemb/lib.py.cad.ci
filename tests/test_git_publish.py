@@ -18,6 +18,7 @@ from cad_ci.git_publish import (
 )
 from cad_ci.pages import Page, build_site
 from cad_ci.model import Item, Step
+from cad_ci.scons_engine import ENGINE_SCHEMA as SCONS_ENGINE_SCHEMA
 
 
 def git(cwd: Path, *args: str) -> str:
@@ -106,7 +107,7 @@ def write_item(root: Path, item: Item, value: str) -> None:
     evidence.write_text(json.dumps({
         "schema": 2,
         "engine": "scons",
-        "engine_schema": 1,
+        "engine_schema": SCONS_ENGINE_SCHEMA,
         "item": item.id,
         "status": "pass",
         "final_step": item.steps[-1].id,
