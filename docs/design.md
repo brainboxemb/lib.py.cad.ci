@@ -396,3 +396,39 @@ items. For main updates it passes both:
 - all currently processed items as baseline membership.
 
 Deletion semantics remain entirely in `lib.py.cad.ci`.
+
+
+## Named complete publication scopes
+
+Long-lived integration lanes use the existing generated branches rather than
+creating one generated branch per lane.
+
+### Build store
+
+`main` remains the stable complete scope and `pr/<number>` remains a sparse
+overlay. A named complete scope is represented explicitly in its manifest and
+is installed at one validated top-level directory in the generated build
+branch.
+
+The complete-scope preparation/update implementation is shared with `main`:
+selection, current-membership reconciliation, owned-output replacement and
+evidence validation do not fork by lane name. Main-specific public functions
+remain compatibility wrappers around that generic complete-scope primitive.
+
+Generated-branch publication still clones the latest remote head, mutates one
+scope and retries only a push race. Therefore two lane publications close
+together preserve each other's sibling directories.
+
+### Pages
+
+A named Pages publication replaces exactly one validated top-level subtree.
+Stable-root publication cannot infer which arbitrary top-level directories are
+development previews because normal stable sites also own top-level
+directories. The caller therefore supplies the exact named-subtree keep set
+when replacing the stable root.
+
+PR previews remain under `previews/pr-<number>` and are always preserved by
+stable publication independently of the named keep set.
+
+This keeps publication mechanics generic while leaving lane naming and site
+layout policy with the consumer.

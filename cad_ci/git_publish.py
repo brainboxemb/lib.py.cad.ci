@@ -12,10 +12,10 @@ from pathlib import Path
 import shutil
 import subprocess
 import tempfile
-from typing import Callable
+from typing import Callable, Iterable
 
 from .build_store import install_scope, remove_pr
-from .pages import install_preview, install_stable, remove_preview
+from .pages import install_named, install_preview, install_stable, remove_preview
 
 
 class GitPublishError(RuntimeError):
@@ -212,13 +212,14 @@ def publish_build_scope(
     scope: str,
     message: str,
     pull_request: int | None = None,
+    scope_name: str | None = None,
     branch: str = "build",
     remote: str = "origin",
     retries: int = 3,
     source_ref: str | None = None,
     expected_source: str | None = None,
 ) -> str:
-    """Install a prepared main/PR build scope and publish the build branch."""
+    """Install one prepared main/named/PR scope and publish the build branch."""
 
     return _publish(
         source_repo=source_repo,
@@ -233,6 +234,7 @@ def publish_build_scope(
             store=work,
             scope=scope,
             pull_request=pull_request,
+            scope_name=scope_name,
         ),
     )
 
@@ -268,21 +270,46 @@ def publish_pages(
     site: Path,
     message: str,
     pull_request: int | None = None,
+    name: str | None = None,
+    preserve_subtrees: Iterable[str] = (),
     branch: str = "gh-pages",
     remote: str = "origin",
     retries: int = 3,
     source_ref: str | None = None,
     expected_source: str | None = None,
 ) -> str:
-    """Publish either the stable Pages root or one PR preview."""
+    """Publish stable root, one named subtree or one PR preview."""
 
-    if pull_request is None:
-        mutation = lambda work: install_stable(site=site, pages_root=work)
-    else:
+    preserved = tuple(preserve_subtrees)
+    if pull_request is not None and name is not None:
+        raise GitPublishError(
+            "Pages publication may select pull_request or name, not both"
+        )
+    if pull_request is not None:
+        if preserved:
+            raise GitPublishError(
+                "preserve_subtrees applies only to stable Pages publication"
+            )
         mutation = lambda work: install_preview(
             site=site,
             pages_root=work,
             pull_request=pull_request,
+        )
+    elif name is not None:
+        if preserved:
+            raise GitPublishError(
+                "preserve_subtrees applies only to stable Pages publication"
+            )
+        mutation = lambda work: install_named(
+            site=site,
+            pages_root=work,
+            name=name,
+        )
+    else:
+        mutation = lambda work: install_stable(
+            site=site,
+            pages_root=work,
+            preserve_subtrees=preserved,
         )
     return _publish(
         source_repo=source_repo,
@@ -294,7 +321,6 @@ def publish_pages(
         expected_source=expected_source,
         mutation=mutation,
     )
-
 
 def publish_pages_preview_cleanup(
     *,

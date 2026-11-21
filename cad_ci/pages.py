@@ -41,6 +41,24 @@ def _page_path(path: str) -> Path:
     return value
 
 
+def _safe_subtree_name(name: str) -> str:
+    """Return one safe caller-owned top-level Pages subtree name."""
+
+    if not isinstance(name, str) or not name.strip():
+        raise PagesError("subtree name must be non-empty text")
+    value = name.strip()
+    path = Path(value)
+    if (
+        path.is_absolute()
+        or len(path.parts) != 1
+        or value in {".", "..", ".git", "previews"}
+        or "/" in value
+        or "\\" in value
+    ):
+        raise PagesError(f"unsafe Pages subtree name: {name}")
+    return value
+
+
 def render_page(
     *,
     site_title: str,
@@ -163,42 +181,57 @@ def install_preview(*, site: Path, pages_root: Path, pull_request: int) -> Path:
     return target
 
 
-def install_stable(*, site: Path, pages_root: Path) -> None:
-    """Replace the stable Pages root while preserving every PR preview."""
+def install_named(
+    *,
+    site: Path,
+    pages_root: Path,
+    name: str,
+) -> Path:
+    """Replace one safe named Pages subtree and preserve every sibling."""
+
+    if not (site / "provenance.json").is_file():
+        raise PagesError("site has no provenance.json")
+    target = pages_root / _safe_subtree_name(name)
+    _replace_tree(site, target)
+    return target
+
+
+def install_stable(
+    *,
+    site: Path,
+    pages_root: Path,
+    preserve_subtrees: Iterable[str] = (),
+) -> None:
+    """Replace stable Pages while preserving previews and named subtrees."""
 
     if not (site / "provenance.json").is_file():
         raise PagesError("site has no provenance.json")
 
-    previews = pages_root / "previews"
-    saved_previews: Path | None = None
-    with tempfile.TemporaryDirectory(prefix="cad-ci-pages-") as tmp:
-        tmp_path = Path(tmp)
-        if previews.is_dir():
-            saved_previews = tmp_path / "previews"
-            shutil.copytree(previews, saved_previews)
+    names = tuple(_safe_subtree_name(name) for name in preserve_subtrees)
+    if len(names) != len(set(names)):
+        raise PagesError("duplicate preserved Pages subtree")
+    for name in names:
+        if (site / name).exists():
+            raise PagesError(
+                f"stable site collides with preserved Pages subtree: {name}"
+            )
 
-        # The checked-out branch contains .git metadata that must not be removed.
-        for child in tuple(pages_root.iterdir()) if pages_root.exists() else ():
-            if child.name in {".git", "previews"}:
-                continue
-            if child.is_dir():
-                shutil.rmtree(child)
-            else:
-                child.unlink()
+    preserved = {".git", "previews", *names}
+    for child in tuple(pages_root.iterdir()) if pages_root.exists() else ():
+        if child.name in preserved:
+            continue
+        if child.is_dir():
+            shutil.rmtree(child)
+        else:
+            child.unlink()
 
-        pages_root.mkdir(parents=True, exist_ok=True)
-        for child in site.iterdir():
-            target = pages_root / child.name
-            if child.is_dir():
-                shutil.copytree(child, target)
-            else:
-                shutil.copy2(child, target)
-
-        if saved_previews is not None:
-            if previews.exists():
-                shutil.rmtree(previews)
-            shutil.copytree(saved_previews, previews)
-
+    pages_root.mkdir(parents=True, exist_ok=True)
+    for child in site.iterdir():
+        target = pages_root / child.name
+        if child.is_dir():
+            shutil.copytree(child, target)
+        else:
+            shutil.copy2(child, target)
 
 def remove_preview(*, pages_root: Path, pull_request: int) -> bool:
     """Remove one PR preview without changing the stable site or other previews."""

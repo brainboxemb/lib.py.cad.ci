@@ -9,6 +9,7 @@ from cad_ci.pages import (
     Page,
     PagesError,
     build_site,
+    install_named,
     install_preview,
     install_stable,
     remove_preview,
@@ -110,6 +111,78 @@ class PagesTests(unittest.TestCase):
                     site_title="Demo",
                     pages=[Page("../x.html", "X", "")],
                     provenance={},
+                )
+
+    def test_named_subtrees_are_isolated_and_stable_preserves_selected_names(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            pages = root / "pages"
+            pages.mkdir()
+
+            install_stable(
+                site=self.make_site(root, "stable-1"),
+                pages_root=pages,
+            )
+            install_named(
+                site=self.make_site(root, "dev-a-1"),
+                pages_root=pages,
+                name="dev_a",
+            )
+            install_named(
+                site=self.make_site(root, "dev-b-1"),
+                pages_root=pages,
+                name="dev_b",
+            )
+
+            install_named(
+                site=self.make_site(root, "dev-a-2"),
+                pages_root=pages,
+                name="dev_a",
+            )
+            self.assertIn("stable-1", (pages / "index.html").read_text())
+            self.assertIn(
+                "dev-a-2",
+                (pages / "dev_a/index.html").read_text(),
+            )
+            self.assertIn(
+                "dev-b-1",
+                (pages / "dev_b/index.html").read_text(),
+            )
+
+            install_stable(
+                site=self.make_site(root, "stable-2"),
+                pages_root=pages,
+                preserve_subtrees=("dev_a", "dev_b"),
+            )
+            self.assertIn("stable-2", (pages / "index.html").read_text())
+            self.assertIn(
+                "dev-a-2",
+                (pages / "dev_a/index.html").read_text(),
+            )
+            self.assertIn(
+                "dev-b-1",
+                (pages / "dev_b/index.html").read_text(),
+            )
+
+    def test_named_subtree_validation_and_stable_collision_are_explicit(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            pages = root / "pages"
+            pages.mkdir()
+            site = self.make_site(root, "dev")
+
+            for name in ("previews", ".git", "../escape", "a/b", ""):
+                with self.subTest(name=name):
+                    with self.assertRaises(PagesError):
+                        install_named(site=site, pages_root=pages, name=name)
+
+            stable = self.make_site(root, "stable")
+            (stable / "dev_a").mkdir()
+            with self.assertRaisesRegex(PagesError, "collides"):
+                install_stable(
+                    site=stable,
+                    pages_root=pages,
+                    preserve_subtrees=("dev_a",),
                 )
 
 

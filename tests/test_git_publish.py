@@ -9,7 +9,7 @@ from unittest.mock import patch
 
 import cad_ci.git_publish as git_publish
 
-from cad_ci.build_store import prepare_main, prepare_overlay
+from cad_ci.build_store import prepare_main, prepare_named, prepare_overlay
 from cad_ci.git_publish import (
     publish_build_scope,
     publish_pages,
@@ -401,6 +401,132 @@ class GitPublishTests(unittest.TestCase):
                     branch="missing",
                     out=root / "out",
                 )
+
+    def test_generated_branches_preserve_named_sibling_scopes(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source, remote = init_remote(root)
+            item = configured_item("cases/a", "a")
+
+            def prepared(label: str, name: str | None) -> Path:
+                candidate = root / f"candidate-{label}"
+                write_item(candidate, item, label)
+                out = root / f"prepared-{label}"
+                if name is None:
+                    prepare_main(
+                        candidate_root=candidate,
+                        out=out,
+                        items=[item],
+                        source_commit=label,
+                    )
+                else:
+                    prepare_named(
+                        candidate_root=candidate,
+                        out=out,
+                        items=[item],
+                        source_commit=label,
+                        name=name,
+                    )
+                return out
+
+            publish_build_scope(
+                source_repo=source,
+                candidate=prepared("main", None),
+                scope="main",
+                message="main",
+            )
+            publish_build_scope(
+                source_repo=source,
+                candidate=prepared("dev-a-1", "dev_a"),
+                scope="named",
+                scope_name="dev_a",
+                message="dev a",
+            )
+            publish_build_scope(
+                source_repo=source,
+                candidate=prepared("dev-b-1", "dev_b"),
+                scope="named",
+                scope_name="dev_b",
+                message="dev b",
+            )
+            publish_build_scope(
+                source_repo=source,
+                candidate=prepared("dev-a-2", "dev_a"),
+                scope="named",
+                scope_name="dev_a",
+                message="dev a update",
+            )
+
+            self.assertEqual(
+                branch_file(remote, "build", "main/cases/a/result.txt"),
+                "main",
+            )
+            self.assertEqual(
+                branch_file(remote, "build", "dev_a/cases/a/result.txt"),
+                "dev-a-2",
+            )
+            self.assertEqual(
+                branch_file(remote, "build", "dev_b/cases/a/result.txt"),
+                "dev-b-1",
+            )
+
+    def test_pages_named_subtrees_survive_each_other_and_stable_update(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source, remote = init_remote(root)
+
+            def site(label: str) -> Path:
+                out = root / label
+                build_site(
+                    out=out,
+                    site_title="Demo",
+                    pages=[Page("index.html", "Home", f"<p>{label}</p>")],
+                    provenance={"source": label},
+                )
+                return out
+
+            publish_pages(
+                source_repo=source,
+                site=site("stable-1"),
+                message="stable 1",
+            )
+            publish_pages(
+                source_repo=source,
+                site=site("dev-a-1"),
+                name="dev_a",
+                message="dev a",
+            )
+            publish_pages(
+                source_repo=source,
+                site=site("dev-b-1"),
+                name="dev_b",
+                message="dev b",
+            )
+            publish_pages(
+                source_repo=source,
+                site=site("dev-a-2"),
+                name="dev_a",
+                message="dev a update",
+            )
+            publish_pages(
+                source_repo=source,
+                site=site("stable-2"),
+                preserve_subtrees=("dev_a", "dev_b"),
+                message="stable 2",
+            )
+
+            self.assertIn(
+                "stable-2",
+                branch_file(remote, "gh-pages", "index.html"),
+            )
+            self.assertIn(
+                "dev-a-2",
+                branch_file(remote, "gh-pages", "dev_a/index.html"),
+            )
+            self.assertIn(
+                "dev-b-1",
+                branch_file(remote, "gh-pages", "dev_b/index.html"),
+            )
 
 
 if __name__ == "__main__":
