@@ -21,10 +21,14 @@ from cad_ci.scons_engine import (
     RUN_ROOT,
     STATE_ROOT,
     TARGET_ROOT,
+    MANIFEST_PATH,
     SConsRunError,
     resolve_request,
     run_scons,
+    target_specs,
+    write_manifest,
 )
+from cad_ci.paths import source_inventory
 
 
 def _write(path: Path, text: str) -> None:
@@ -122,6 +126,99 @@ assert (out / "build.json").read_text()
         shutil.rmtree(root / STATE_ROOT, ignore_errors=True)
         shutil.rmtree(root / TARGET_ROOT, ignore_errors=True)
         shutil.rmtree(root / RUN_ROOT, ignore_errors=True)
+
+    def test_manifest_preparation_resolves_only_active_target_closure(self):
+        """Selective preparation scans once and ignores unrelated target inputs."""
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            _write(
+                root / "cad-ci.yml",
+                "schema: 1\n"
+                "items: [library, selected, unrelated]\n",
+            )
+            _write(root / "library" / "input.txt", "library\n")
+            _write(
+                root / "library" / "ci.yml",
+                "id: library\n"
+                "steps:\n"
+                "  - id: build\n"
+                "    inputs: [library/input.txt]\n"
+                "    run: [python, -c, 'print(1)']\n",
+            )
+            _write(root / "selected" / "prepare.txt", "prepare\n")
+            _write(root / "selected" / "verify.txt", "verify\n")
+            _write(
+                root / "selected" / "ci.yml",
+                "id: selected\n"
+                "needs: [library]\n"
+                "steps:\n"
+                "  - id: prepare\n"
+                "    inputs: [selected/prepare.txt]\n"
+                "    run: [python, -c, 'print(1)']\n"
+                "  - id: verify\n"
+                "    inputs: [selected/verify.txt]\n"
+                "    run: [python, -c, 'print(1)']\n",
+            )
+            _write(root / "unrelated" / "input.txt", "unrelated\n")
+            _write(
+                root / "unrelated" / "ci.yml",
+                "id: unrelated\n"
+                "steps:\n"
+                "  - id: build\n"
+                "    inputs: [unrelated/**]\n"
+                "    run: [python, -c, 'print(1)']\n",
+            )
+
+            items = load_repository(root)
+            request = resolve_request(items, {"selected"})
+            with patch(
+                "cad_ci.scons_engine.source_inventory",
+                wraps=source_inventory,
+            ) as inventory:
+                manifest_path = write_manifest(root, items, request)
+            self.assertEqual(inventory.call_count, 1)
+
+            manifest = json.loads(
+                manifest_path.read_text(encoding="utf-8")
+            )
+            self.assertEqual(
+                manifest["active_keys"],
+                ["library:build", "selected:prepare", "selected:verify"],
+            )
+            self.assertEqual(
+                [row["key"] for row in manifest["targets"]],
+                manifest["active_keys"],
+            )
+
+            # Active signatures remain identical to complete-graph preparation.
+            complete = {
+                row["key"]: row
+                for row in target_specs(root, items)
+            }
+            for row in manifest["targets"]:
+                self.assertEqual(
+                    row["target_spec_digest"],
+                    complete[row["key"]]["target_spec_digest"],
+                )
+
+            link = root / "unrelated" / "matched-link.txt"
+            try:
+                link.symlink_to(root / "unrelated" / "input.txt")
+            except (OSError, NotImplementedError):
+                self.skipTest("symlinks are unavailable")
+
+            # The inactive matched symlink does not block the selective run.
+            selective = write_manifest(root, items, request)
+            self.assertTrue(selective.is_file())
+
+            # Selecting the owning item retains the existing safety failure.
+            unrelated = resolve_request(items, {"unrelated"})
+            with self.assertRaisesRegex(
+                SConsRunError,
+                "configured source input is a symlink",
+            ):
+                write_manifest(root, items, unrelated)
 
     def test_simple_inputs_and_step_config_are_selective(self):
         self.require_scons()
