@@ -5,6 +5,7 @@ public evidence below that item's reserved .cad-ci directory. This module copies
 only validated complete item results into the generated build-branch layout:
 
 - main/ is the complete accepted baseline;
+- caller-named top-level scopes are independent complete baselines;
 - pr/<number>/ is a sparse overlay for one pull request.
 
 SCons private state and CacheDir content are never part of this store.
@@ -41,6 +42,33 @@ def _safe_relative(path: Path | str) -> Path:
     if value.is_absolute() or not value.parts or ".." in value.parts:
         raise BuildStoreError(f"unsafe item path: {path}")
     return value
+
+
+def _safe_scope_name(name: str) -> str:
+    """Return one safe top-level complete-scope name."""
+
+    if not isinstance(name, str) or not name.strip():
+        raise BuildStoreError("scope name must be non-empty text")
+    value = name.strip()
+    path = Path(value)
+    if (
+        path.is_absolute()
+        or len(path.parts) != 1
+        or value in {".", "..", "pr"}
+        or "/" in value
+        or "\\" in value
+    ):
+        raise BuildStoreError(f"unsafe scope name: {name}")
+    return value
+
+
+def _complete_scope_contract(scope_name: str) -> tuple[str, str | None]:
+    """Return manifest scope/name fields for one complete scope."""
+
+    name = _safe_scope_name(scope_name)
+    if name == "main":
+        return "main", None
+    return "named", name
 
 
 def _safe_owned_output(path: Path | str) -> Path:
@@ -402,18 +430,20 @@ def _write_manifest(out: Path, manifest: dict) -> None:
     )
 
 
-def prepare_main(
+def prepare_complete(
     *,
     candidate_root: Path,
     out: Path,
     items: Iterable[Item],
     source_commit: str,
+    scope_name: str,
 ) -> dict:
-    """Create a complete main candidate from validated item results."""
+    """Create one complete named-scope candidate from validated item results."""
 
-    configured = _items(items, operation="main candidate")
+    manifest_scope, manifest_name = _complete_scope_contract(scope_name)
+    operation = "main candidate" if scope_name == "main" else f"{scope_name} candidate"
+    configured = _items(items, operation=operation)
 
-    # Validate every item before exposing any output candidate.
     rows = {
         item.path.as_posix(): _item_record(
             candidate_root,
@@ -437,29 +467,77 @@ def prepare_main(
 
     manifest = {
         "schema": BUILD_SCHEMA,
-        "scope": "main",
+        "scope": manifest_scope,
         "source_commit": source_commit,
         "items": rows,
     }
+    if manifest_name is not None:
+        manifest["name"] = manifest_name
     _write_manifest(out, manifest)
     return manifest
 
 
-def update_main(
+def prepare_main(
     *,
-    main: Path,
     candidate_root: Path,
     out: Path,
     items: Iterable[Item],
     source_commit: str,
+) -> dict:
+    """Create the complete stable main candidate."""
+
+    return prepare_complete(
+        candidate_root=candidate_root,
+        out=out,
+        items=items,
+        source_commit=source_commit,
+        scope_name="main",
+    )
+
+
+def prepare_named(
+    *,
+    candidate_root: Path,
+    out: Path,
+    items: Iterable[Item],
+    source_commit: str,
+    name: str,
+) -> dict:
+    """Create one complete caller-named candidate."""
+
+    if _safe_scope_name(name) == "main":
+        raise BuildStoreError("named scope may not use reserved name main")
+    return prepare_complete(
+        candidate_root=candidate_root,
+        out=out,
+        items=items,
+        source_commit=source_commit,
+        scope_name=name,
+    )
+
+
+def update_complete(
+    *,
+    complete: Path,
+    candidate_root: Path,
+    out: Path,
+    items: Iterable[Item],
+    source_commit: str,
+    scope_name: str,
     current_items: Iterable[Item] | None = None,
 ) -> dict:
-    """Update selected items and optionally remove no-longer-configured items."""
+    """Update selected items in one complete scope and reconcile membership."""
 
-    main_manifest = load_manifest(main, expected_scope="main")
+    manifest_scope, manifest_name = _complete_scope_contract(scope_name)
+    complete_manifest = load_manifest(
+        complete,
+        expected_scope=manifest_scope,
+        expected_name=manifest_name,
+    )
+    noun = "main" if scope_name == "main" else f"named scope {scope_name}"
     configured = _items(
         items,
-        operation="main update",
+        operation=f"{noun} update",
         allow_empty=current_items is not None,
     )
     current = (
@@ -467,13 +545,13 @@ def update_main(
         if current_items is None
         else _items(
             current_items,
-            operation="current main configuration",
+            operation=f"current {noun} configuration",
             allow_empty=True,
         )
     )
 
     selected_paths = {item.path for item in configured}
-    previous_rows = dict(main_manifest["items"])
+    previous_rows = dict(complete_manifest["items"])
     previous_paths = {
         _safe_relative(path)
         for path in previous_rows
@@ -498,7 +576,7 @@ def update_main(
                 sorted(path.as_posix() for path in missing_current)
             )
             raise BuildStoreError(
-                f"current main item has no baseline or replacement: {names}"
+                f"current {noun} item has no baseline or replacement: {names}"
             )
 
         removed_paths = previous_paths - current_paths
@@ -526,7 +604,7 @@ def update_main(
 
     if out.exists():
         shutil.rmtree(out)
-    shutil.copytree(main, out)
+    shutil.copytree(complete, out)
 
     rows = dict(previous_rows)
     for item_path in sorted(
@@ -554,18 +632,66 @@ def update_main(
         current_keys = {item.path.as_posix() for item in current}
         if set(rows) != current_keys:
             raise BuildStoreError(
-                "main update did not produce the complete current item set"
+                f"{noun} update did not produce the complete current item set"
             )
 
     manifest = {
         "schema": BUILD_SCHEMA,
-        "scope": "main",
+        "scope": manifest_scope,
         "source_commit": source_commit,
         "items": rows,
     }
+    if manifest_name is not None:
+        manifest["name"] = manifest_name
     _write_manifest(out, manifest)
     return manifest
 
+
+def update_main(
+    *,
+    main: Path,
+    candidate_root: Path,
+    out: Path,
+    items: Iterable[Item],
+    source_commit: str,
+    current_items: Iterable[Item] | None = None,
+) -> dict:
+    """Update selected items in the stable main complete scope."""
+
+    return update_complete(
+        complete=main,
+        candidate_root=candidate_root,
+        out=out,
+        items=items,
+        current_items=current_items,
+        source_commit=source_commit,
+        scope_name="main",
+    )
+
+
+def update_named(
+    *,
+    named: Path,
+    candidate_root: Path,
+    out: Path,
+    items: Iterable[Item],
+    source_commit: str,
+    name: str,
+    current_items: Iterable[Item] | None = None,
+) -> dict:
+    """Update selected items in one caller-named complete scope."""
+
+    if _safe_scope_name(name) == "main":
+        raise BuildStoreError("named scope may not use reserved name main")
+    return update_complete(
+        complete=named,
+        candidate_root=candidate_root,
+        out=out,
+        items=items,
+        current_items=current_items,
+        source_commit=source_commit,
+        scope_name=name,
+    )
 
 def prepare_overlay(
     *,
@@ -657,6 +783,7 @@ def load_manifest(
     root: Path,
     *,
     expected_scope: str | None = None,
+    expected_name: str | None = None,
 ) -> dict:
     """Read and validate one durable build-scope manifest."""
 
@@ -667,13 +794,31 @@ def load_manifest(
         )
 
     scope = data.get("scope")
-    if scope not in {"main", "pr"}:
+    if scope not in {"main", "named", "pr"}:
         raise BuildStoreError(
             f"invalid build scope in {root}: {scope!r}"
         )
     if expected_scope is not None and scope != expected_scope:
         raise BuildStoreError(
             f"expected {expected_scope} build scope in {root}, found {scope}"
+        )
+
+    name = data.get("name")
+    if scope == "named":
+        if not isinstance(name, str):
+            raise BuildStoreError(f"named build scope has no name in {root}")
+        normalized_name = _safe_scope_name(name)
+        if normalized_name == "main":
+            raise BuildStoreError("named scope may not use reserved name main")
+        if expected_name is not None and normalized_name != _safe_scope_name(expected_name):
+            raise BuildStoreError(
+                f"expected named build scope {expected_name}, found {normalized_name}"
+            )
+    elif name is not None:
+        raise BuildStoreError(f"{scope} build scope may not declare a name")
+    elif expected_name is not None:
+        raise BuildStoreError(
+            f"expected named build scope {expected_name}, found {scope}"
         )
 
     rows = data.get("items")
@@ -789,12 +934,25 @@ def install_scope(
     store: Path,
     scope: str,
     pull_request: int | None = None,
+    scope_name: str | None = None,
 ) -> Path:
     """Install one validated scope in a checked-out generated build branch."""
 
     if scope == "main":
         load_manifest(candidate, expected_scope="main")
         target = store / "main"
+    elif scope == "named":
+        if scope_name is None:
+            raise BuildStoreError("named scope requires scope_name")
+        name = _safe_scope_name(scope_name)
+        if name == "main":
+            raise BuildStoreError("named scope may not use reserved name main")
+        load_manifest(
+            candidate,
+            expected_scope="named",
+            expected_name=name,
+        )
+        target = store / name
     elif scope == "pr":
         load_manifest(candidate, expected_scope="pr")
         if pull_request is None or pull_request <= 0:
@@ -807,7 +965,6 @@ def install_scope(
 
     _replace_tree(candidate, target)
     return target
-
 
 def remove_pr(*, store: Path, pull_request: int) -> bool:
     """Remove one PR overlay without changing any other durable scope."""
