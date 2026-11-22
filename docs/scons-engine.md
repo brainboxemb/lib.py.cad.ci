@@ -836,8 +836,10 @@ source: normalized source-root template
 ```
 
 The source template accepts only the literal `{item_path}` token. Expansion
-happens while target specs are created, after item paths and dependencies are
-fully known. Unknown braces/tokens are configuration errors.
+happens during repository configuration normalization, when the owning
+repository-relative item path is already known. Target specs therefore contain
+the normalized expanded source root. Unknown braces/tokens are configuration
+errors.
 
 For a copy step, repository source inputs are empty. Its SCons signature
 contains:
