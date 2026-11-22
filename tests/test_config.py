@@ -307,6 +307,162 @@ class ConfigTests(unittest.TestCase):
             with self.assertRaisesRegex(ConfigError, "step outputs overlap"):
                 load_repository(repo)
 
+
+    def test_dependency_copy_expands_item_path_and_requires_direct_need(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp)
+            (repo / "cad-ci.yml").write_text(
+                "schema: 1\nitems: [batch, examples/a]\n",
+                encoding="utf-8",
+            )
+            batch = repo / "batch"
+            batch.mkdir()
+            (batch / "ci.yml").write_text(
+                "id: batch\n"
+                "steps:\n"
+                "  - id: build\n"
+                "    run: [python, -c, 'print(1)']\n"
+                "    outputs: [items]\n",
+                encoding="utf-8",
+            )
+            consumer = repo / "examples" / "a"
+            consumer.mkdir(parents=True)
+            (consumer / "ci.yml").write_text(
+                "id: a\n"
+                "needs: [batch]\n"
+                "steps:\n"
+                "  - id: copy\n"
+                "    copy:\n"
+                "      dependency: batch\n"
+                "      source: items/{item_path}\n"
+                "    outputs: [result.txt]\n",
+                encoding="utf-8",
+            )
+
+            item = load_repository(repo)["a"]
+            self.assertIsNone(item.steps[0].run)
+            self.assertEqual(item.steps[0].copy.dependency, "batch")
+            self.assertEqual(
+                item.steps[0].copy.source,
+                "items/examples/a",
+            )
+            self.assertEqual(item.steps[0].inputs, ())
+            self.assertIsNone(item.steps[0].timeout_seconds)
+
+    def test_rejects_invalid_dependency_copy_configuration(self):
+        cases = (
+            (
+                "run: [python, -c, 'print(1)']\n"
+                "    copy: {dependency: batch, source: items/a}\n"
+                "    outputs: [result.txt]\n",
+                "exactly one of run or copy",
+            ),
+            (
+                "copy: {dependency: batch, source: items/a}\n",
+                "requires at least one output",
+            ),
+            (
+                "copy: {dependency: batch, source: items/a}\n"
+                "    inputs: [consumer/**]\n"
+                "    outputs: [result.txt]\n",
+                "does not accept inputs",
+            ),
+            (
+                "copy: {dependency: batch, source: 'items/{unknown}'}\n"
+                "    outputs: [result.txt]\n",
+                "unsupported substitution",
+            ),
+            (
+                "copy: {dependency: batch, source: ../items/a}\n"
+                "    outputs: [result.txt]\n",
+                "stay inside dependency output",
+            ),
+        )
+        for body, expected in cases:
+            with self.subTest(expected=expected):
+                with tempfile.TemporaryDirectory() as tmp:
+                    repo = Path(tmp)
+                    (repo / "cad-ci.yml").write_text(
+                        "schema: 1\nitems: [batch, consumer]\n",
+                        encoding="utf-8",
+                    )
+                    batch = repo / "batch"
+                    batch.mkdir()
+                    (batch / "ci.yml").write_text(
+                        "id: batch\n"
+                        "steps:\n"
+                        "  - id: build\n"
+                        "    run: [python, -c, 'print(1)']\n"
+                        "    outputs: [items]\n",
+                        encoding="utf-8",
+                    )
+                    consumer = repo / "consumer"
+                    consumer.mkdir()
+                    (consumer / "ci.yml").write_text(
+                        "id: consumer\n"
+                        "needs: [batch]\n"
+                        "steps:\n"
+                        "  - id: materialize\n"
+                        f"    {body}",
+                        encoding="utf-8",
+                    )
+                    with self.assertRaisesRegex(ConfigError, expected):
+                        load_repository(repo)
+
+    def test_rejects_copy_from_non_direct_or_undeclared_output(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp)
+            (repo / "cad-ci.yml").write_text(
+                "schema: 1\nitems: [batch, consumer]\n",
+                encoding="utf-8",
+            )
+            batch = repo / "batch"
+            batch.mkdir()
+            (batch / "ci.yml").write_text(
+                "id: batch\n"
+                "steps: [{id: build, run: [python, -c, 'print(1)'], outputs: [items]}]\n",
+                encoding="utf-8",
+            )
+            consumer = repo / "consumer"
+            consumer.mkdir()
+            (consumer / "ci.yml").write_text(
+                "id: consumer\n"
+                "steps:\n"
+                "  - id: materialize\n"
+                "    copy: {dependency: batch, source: items/consumer}\n"
+                "    outputs: [result.txt]\n",
+                encoding="utf-8",
+            )
+            with self.assertRaisesRegex(ConfigError, "direct need"):
+                load_repository(repo)
+
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp)
+            (repo / "cad-ci.yml").write_text(
+                "schema: 1\nitems: [batch, consumer]\n",
+                encoding="utf-8",
+            )
+            batch = repo / "batch"
+            batch.mkdir()
+            (batch / "ci.yml").write_text(
+                "id: batch\n"
+                "steps: [{id: build, run: [python, -c, 'print(1)'], outputs: [other]}]\n",
+                encoding="utf-8",
+            )
+            consumer = repo / "consumer"
+            consumer.mkdir()
+            (consumer / "ci.yml").write_text(
+                "id: consumer\n"
+                "needs: [batch]\n"
+                "steps:\n"
+                "  - id: materialize\n"
+                "    copy: {dependency: batch, source: items/consumer}\n"
+                "    outputs: [result.txt]\n",
+                encoding="utf-8",
+            )
+            with self.assertRaisesRegex(ConfigError, "outside dependency"):
+                load_repository(repo)
+
     def test_rejects_dependency_cycle(self):
         with tempfile.TemporaryDirectory() as tmp:
             repo = Path(tmp)
