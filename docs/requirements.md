@@ -453,10 +453,13 @@ current exact source commit, the library must:
 - load and validate an existing complete-scope manifest through the normal
   build-store manifest reader rather than parsing `build.json` in a tool;
 - use the stored exact `source_commit` as the incremental base;
-- require a full run for the first publication of a caller-named complete
+- require a full run when the generated build branch does not yet exist; this
+  is the explicit first-publication case for either stable `main` or a named
   scope;
-- fail if stable `main` has no durable baseline instead of silently treating
-  stable integration as a first run;
+- require a full run for the first publication of a caller-named complete
+  scope on an existing generated build branch;
+- fail if the generated build branch exists but stable `main` has no durable
+  baseline, instead of silently replacing potentially corrupt stable state;
 - prepare selected/current item membership through the existing planner and
   build-store complete-scope functions;
 - publish through the existing generated-branch publication API with source
