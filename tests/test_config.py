@@ -825,5 +825,85 @@ class ConfigTests(unittest.TestCase):
                 load_repository(repo)
 
 
+    def test_command_step_accepts_direct_dependent_selection_context(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp)
+            (repo / "cad-ci.yml").write_text(
+                "schema: 1\nitems: [batch]\n",
+                encoding="utf-8",
+            )
+            folder = repo / "batch"
+            folder.mkdir()
+            (folder / "ci.yml").write_text(
+                "id: batch\n"
+                "steps:\n"
+                "  - id: run\n"
+                "    selection_context: direct_dependents\n"
+                "    run: [python, -c, 'print(1)']\n",
+                encoding="utf-8",
+            )
+
+            step = load_repository(repo)["batch"].steps[0]
+            self.assertEqual(step.selection_context, "direct_dependents")
+
+    def test_selection_context_rejects_unknown_value_and_copy_action(self):
+        cases = (
+            (
+                "run: [python, -c, 'print(1)']\n"
+                "    selection_context: downstream_magic\n",
+                "selection_context must be none or direct_dependents",
+            ),
+            (
+                "copy: {dependency: source, source: items/a}\n"
+                "    outputs: [result.txt]\n"
+                "    selection_context: direct_dependents\n",
+                "copy step does not accept selection_context",
+            ),
+        )
+        for action, expected in cases:
+            with self.subTest(expected=expected):
+                with tempfile.TemporaryDirectory() as tmp:
+                    repo = Path(tmp)
+                    items = (
+                        "[source, consumer]"
+                        if action.startswith("copy:")
+                        else "[consumer]"
+                    )
+                    (repo / "cad-ci.yml").write_text(
+                        f"schema: 1\nitems: {items}\n",
+                        encoding="utf-8",
+                    )
+                    if action.startswith("copy:"):
+                        source = repo / "source"
+                        source.mkdir()
+                        (source / "ci.yml").write_text(
+                            "id: source\n"
+                            "steps:\n"
+                            "  - id: build\n"
+                            "    run: [python, -c, 'print(1)']\n"
+                            "    outputs: [items]\n",
+                            encoding="utf-8",
+                        )
+                    consumer = repo / "consumer"
+                    consumer.mkdir()
+                    needs = (
+                        "needs: [source]\n"
+                        if action.startswith("copy:")
+                        else ""
+                    )
+                    (consumer / "ci.yml").write_text(
+                        "id: consumer\n"
+                        + needs
+                        + "steps:\n"
+                        + "  - id: test\n"
+                        + "    "
+                        + action,
+                        encoding="utf-8",
+                    )
+                    with self.assertRaisesRegex(ConfigError, expected):
+                        load_repository(repo)
+
+
+
 if __name__ == "__main__":
     unittest.main()
