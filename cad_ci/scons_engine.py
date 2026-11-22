@@ -394,6 +394,12 @@ def target_specs(
                 "engine_schema": ENGINE_SCHEMA,
                 "item_id": item.id,
                 "item_path": item.path.as_posix(),
+                "builder": item.builder,
+                "builder_path": (
+                    item.builder_path.as_posix()
+                    if item.builder_path is not None
+                    else None
+                ),
                 "step_id": configured_step.id,
                 "action_type": action_type,
                 "run": command,
@@ -417,6 +423,12 @@ def target_specs(
                     "key": key,
                     "item_id": item.id,
                     "item_path": item.path.as_posix(),
+                    "builder": item.builder,
+                    "builder_path": (
+                        item.builder_path.as_posix()
+                        if item.builder_path is not None
+                        else None
+                    ),
                     "step_id": configured_step.id,
                     "action_type": action_type,
                     "run": command,
