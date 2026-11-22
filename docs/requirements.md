@@ -834,3 +834,67 @@ still reject the matched symlink.
 
 This is startup optimization only. It must not introduce a second selection,
 fingerprint, cache or execution engine.
+
+## 23. Dependency-output copy steps
+
+A consumer item may need to publish a subset of output that a direct dependency
+has already produced. Requiring a consumer subprocess merely to copy that
+subset is not useful work and can multiply dependency materialization cost.
+
+A step therefore defines exactly one action form:
+
+```yaml
+steps:
+  - id: build
+    run: [python, build.py]
+    outputs: [result.json]
+```
+
+or:
+
+```yaml
+steps:
+  - id: materialize
+    copy:
+      dependency: shared-batch
+      source: "items/{item_path}"
+    outputs:
+      - result.json
+      - generated
+```
+
+Requirements for `copy`:
+
+- `dependency` names one item in the consumer item's direct `needs`;
+- `source` is a safe relative path below the dependency output namespace;
+- the only supported substitution is `{item_path}`, expanded to the current
+  consumer item's normalized repository-relative source path;
+- after substitution, `source` may not be absolute, contain `..`, enter a
+  reserved `.cad-ci` namespace or escape the dependency outputs;
+- every declared consumer output `O` is copied from
+  `<dependency>/<source>/O` to consumer output path `O`;
+- every selected source must exist in the dependency's final bundle and must be
+  contained by one of that dependency's declared outputs;
+- a copy step must declare at least one output;
+- a copy step does not accept `inputs` because its content dependency is the
+  direct dependency target plus the copy specification;
+- a copy step does not launch a shell or consumer process and has no command
+  timeout;
+- normal SCons target freshness, `strategy.reuse`, forcing, CacheDir, evidence,
+  cumulative step bundles and durable publication still apply.
+
+A copy step must not materialize the dependency's complete output merely to
+select a small subtree. The SCons action reads the immutable final dependency
+bundle and constructs the consumer target bundle from only the selected source
+members.
+
+Ordinary `run` steps retain the target-private complete dependency snapshot
+contract required for consumer commands.
+
+Structured evidence distinguishes command and copy actions. Executed copy
+targets have action timestamps/duration but no consumer process exit/timeout
+semantics. Current/cache-restored copy targets have null action timestamps just
+like current/cache-restored command targets.
+
+This capability is generic output ownership. It must not know consumer domain
+concepts such as models, references, CAD engines or qualification cases.
