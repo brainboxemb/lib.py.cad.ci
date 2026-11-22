@@ -1018,6 +1018,146 @@ out.mkdir(parents=True, exist_ok=True)
             )
 
 
+
+    def test_active_direct_dependents_are_signature_safe_command_context(self):
+        self.require_scons()
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            _write(
+                root / "cad-ci.yml",
+                "schema: 1\n"
+                "items: [batch, consumer-a, consumer-b, unrelated]\n",
+            )
+            _write(
+                root / "batch" / "build.py",
+                """import json
+import os
+from pathlib import Path
+
+out = Path(os.environ["CAD_CI_OUTPUT"])
+out.mkdir(parents=True, exist_ok=True)
+active = json.loads(os.environ["CAD_CI_ACTIVE_DEPENDENTS_JSON"])
+(out / "active.json").write_text(json.dumps(active) + "\\n")
+""",
+            )
+            _write(
+                root / "batch" / "ci.yml",
+                "id: batch\n"
+                "steps:\n"
+                "  - id: build\n"
+                "    inputs: [batch/build.py]\n"
+                "    selection_context: direct_dependents\n"
+                "    run: [python, build.py]\n"
+                "    outputs: [active.json]\n",
+            )
+            for name in ("consumer-a", "consumer-b"):
+                _write(
+                    root / name / "ci.yml",
+                    f"id: {name}\n"
+                    "needs: [batch]\n"
+                    "steps:\n"
+                    "  - id: verify\n"
+                    "    run: [python, -c, 'print(1)']\n",
+                )
+            _write(
+                root / "unrelated" / "ci.yml",
+                "id: unrelated\n"
+                "steps:\n"
+                "  - id: verify\n"
+                "    run: [python, -c, 'print(1)']\n",
+            )
+
+            only_a = self.run_selected(root, {"consumer-a"})
+            batch_a = _rows(only_a)["batch:build"]
+            self.assertEqual(batch_a["outcome"], "BUILT")
+            self.assertEqual(
+                batch_a["active_dependents"],
+                ["consumer-a"],
+            )
+            self.assertEqual(
+                json.loads(
+                    (root / "build/batch/active.json").read_text()
+                ),
+                ["consumer-a"],
+            )
+            digest_a = batch_a["target_spec_digest"]
+
+            same_a = self.run_selected(root, {"consumer-a"})
+            self.assertEqual(
+                _rows(same_a)["batch:build"]["outcome"],
+                "CURRENT",
+            )
+            self.assertEqual(
+                _rows(same_a)["batch:build"]["target_spec_digest"],
+                digest_a,
+            )
+
+            only_b = self.run_selected(root, {"consumer-b"})
+            batch_b = _rows(only_b)["batch:build"]
+            self.assertEqual(batch_b["outcome"], "BUILT")
+            self.assertEqual(
+                batch_b["active_dependents"],
+                ["consumer-b"],
+            )
+            self.assertNotEqual(
+                batch_b["target_spec_digest"],
+                digest_a,
+            )
+            self.assertEqual(
+                json.loads(
+                    (root / "build/batch/active.json").read_text()
+                ),
+                ["consumer-b"],
+            )
+
+            both = self.run_selected(
+                root,
+                {"consumer-a", "consumer-b"},
+                jobs=2,
+            )
+            batch_both = _rows(both)["batch:build"]
+            self.assertEqual(batch_both["outcome"], "BUILT")
+            self.assertEqual(
+                batch_both["active_dependents"],
+                ["consumer-a", "consumer-b"],
+            )
+            self.assertEqual(both["jobs"], 2)
+
+            public = json.loads(
+                (
+                    root
+                    / "build/batch/.cad-ci/steps/build.json"
+                ).read_text()
+            )
+            self.assertEqual(public["schema"], 5)
+            self.assertEqual(
+                public["active_dependents"],
+                ["consumer-a", "consumer-b"],
+            )
+
+            full = self.run_selected(
+                root,
+                {"batch", "consumer-a", "consumer-b", "unrelated"},
+                jobs=2,
+            )
+            self.assertEqual(
+                _rows(full)["batch:build"]["active_dependents"],
+                ["consumer-a", "consumer-b"],
+            )
+            self.assertNotIn(
+                "unrelated",
+                _rows(full)["batch:build"]["active_dependents"],
+            )
+
+            items = load_repository(root)
+            empty = run_scons(
+                root,
+                items,
+                resolve_request(items, set()),
+                jobs=2,
+            )
+            self.assertEqual(empty["target_count"], 0)
+
     def test_dependency_copy_projects_only_selected_subtrees(self):
         """Copy targets read selected dependency members without full snapshots."""
 
@@ -1181,7 +1321,7 @@ for name in ("consumer-a", "consumer-b"):
             )
 
             report = json.loads((root / REPORT_PATH).read_text())
-            self.assertEqual(report["schema_version"], 5)
+            self.assertEqual(report["schema_version"], 6)
             self.assertEqual(report["jobs"], 1)
             self.assertRegex(report["started_at"], UTC_TIMESTAMP)
             self.assertRegex(report["finished_at"], UTC_TIMESTAMP)
@@ -1199,7 +1339,7 @@ for name in ("consumer-a", "consumer-b"):
 
             step_path = root / "build/item/.cad-ci/steps/build.json"
             step = json.loads(step_path.read_text())
-            self.assertEqual(step["schema"], 4)
+            self.assertEqual(step["schema"], 5)
             self.assertEqual(step["run_started_at"], report["started_at"])
             self.assertEqual(step["run_finished_at"], report["finished_at"])
             self.assertEqual(step["started_at"], built["started_at"])
