@@ -1082,16 +1082,21 @@ active = json.loads(os.environ["CAD_CI_ACTIVE_DEPENDENTS_JSON"])
             )
             digest_a = batch_a["target_spec_digest"]
 
+            self.clean_runner_keep_cache(root)
             same_a = self.run_selected(root, {"consumer-a"})
             self.assertEqual(
                 _rows(same_a)["batch:build"]["outcome"],
-                "CURRENT",
+                "CACHE_RESTORED",
             )
             self.assertEqual(
                 _rows(same_a)["batch:build"]["target_spec_digest"],
                 digest_a,
             )
 
+            # Preserve only CacheDir again. A cache entry built for the
+            # consumer-a selection must not satisfy consumer-b: the active
+            # dependent set is part of the batch target signature.
+            self.clean_runner_keep_cache(root)
             only_b = self.run_selected(root, {"consumer-b"})
             batch_b = _rows(only_b)["batch:build"]
             self.assertEqual(batch_b["outcome"], "BUILT")
