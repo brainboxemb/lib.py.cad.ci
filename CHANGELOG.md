@@ -1,5 +1,24 @@
 # Changelog
 
+## 0.10.0
+
+- add a generic engine-owned `copy:` step action for projecting declared
+  outputs from one direct dependency bundle without launching a consumer
+  subprocess;
+- support safe `{item_path}` substitution for repository templates while
+  rejecting unsafe, undeclared or non-direct dependency sources;
+- read only the selected dependency-bundle members for copy actions instead of
+  materializing the dependency's complete output snapshot first;
+- keep ordinary `run:` steps on their existing target-private dependency
+  snapshot contract and preserve SCons as the sole scheduling/reuse/cache
+  engine;
+- preserve cumulative step bundles, CacheDir restore, public materialization,
+  jobs>1 isolation and deterministic output ownership for copy targets;
+- add `action_type=command|copy` to run/step evidence and bump the SCons engine,
+  private report and public step-evidence schemas for the new action semantics;
+- add configuration, cold/current/invalidation/repair/cache and parallel
+  acceptance coverage for dependency-output copy targets.
+
 ## 0.9.3
 
 - prepare only the requested SCons target/dependency closure during selective
