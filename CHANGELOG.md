@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.13.0
+
+- add optional root `publication.pages` configuration that identifies one
+  processed item and exact declared output as the generated Pages site;
+- add `load_repository_config()` while preserving the existing item-only
+  `load_repository()` API for planner/runner callers;
+- extend the existing durable complete-scope adapter rather than introducing a
+  second lifecycle implementation;
+- allow a completely absent generated build branch to bootstrap the first
+  stable `main` or named complete scope while continuing to fail closed when
+  an existing build branch is missing its stable baseline;
+- publish configured stable/named Pages from the prepared complete scope with
+  generic source/build/scope provenance;
+- derive stable Pages subtree preservation from valid named complete build
+  scopes already present on the generated build branch.
+
 ## 0.12.0
 
 - add repository-owned shared builder aliases so item `ci.yml` can select a
