@@ -7,7 +7,7 @@ Detailed SCons execution semantics live in `docs/scons-engine.md`.
 
 `lib.py.cad.ci` owns generic CAD-CI behavior:
 
-- root and item configuration loading;
+- root, item and repository-owned builder configuration loading;
 - changed-item selection;
 - translation to one SCons target graph;
 - consumer command environment and execution;
@@ -18,13 +18,47 @@ It does not know Forge, SolidCraft, model-specific verification or other
 consumer-domain concepts.
 
 `tool.cad.ci` is a thin CLI/workflow surface above this library. Consumer
-repositories own their `cad-ci.yml`, item `ci.yml` files and domain commands.
+repositories own their `cad-ci.yml`, declarative item `ci.yml` files and
+domain builder implementation.
 
 ## Configuration flow
 
 The root `cad-ci.yml` contains repository-wide configuration such as item
-discovery, defaults and repository variables. Item `ci.yml` files contain
-item-specific dependencies, selection paths, ordered commands and outputs.
+discovery, defaults, repository variables and optional builder aliases.
+
+The preferred public boundary is:
+
+```text
+root cad-ci.yml
+  builder alias -> repository directory
+        +
+item ci.yml
+  identity / dependencies / selection / builder name
+        +
+<builder directory>/builder.yml
+  executable ordered steps / outputs / timeouts
+        ↓
+normalized Item / Step objects
+        ↓
+existing planner and SCons engine
+```
+
+The builder indirection is a configuration-loader concern only. SCons still
+receives the same normalized ordered step graph and remains the only generic
+execution/incrementality engine.
+
+Builder directories are repository-owned source. The loader adds the complete
+builder directory to every using item's coarse watch set. For command steps
+with explicit inputs, it also adds that builder directory to the step input set.
+Consequently one shared builder edit selects its users and participates in the
+target signature without consumer-local wrapper commands.
+
+Legacy item-local `steps` remain accepted as a migration path. Configuration
+rejects an item that has both `builder` and `steps`, or neither.
+
+During command execution CAD-CI exposes the resolved builder identity as
+`CAD_CI_BUILDER` and the absolute directory as `CAD_CI_BUILDER_PATH`.
+The library does not interpret the contents of domain builder scripts.
 
 Configuration is validated once when the repository is loaded. The resulting
 immutable item model carries all execution-significant repository settings
@@ -151,6 +185,24 @@ An optional CacheDir transport may later improve selected-item step reuse, but
 it is not required for correctness or for the primary performance contract and
 must not be assumed by configuration, evidence or tests.
 
+
+## Builder resolution
+
+Root builder aliases are safe repository-relative directory paths. Absolute
+paths, traversal and generated roots are rejected. Each selected directory must
+contain `builder.yml` with builder schema 1.
+
+A builder file owns executable step implementation only. Item identity,
+dependencies, processing state and top-level selection strategy remain in the
+item's `ci.yml`.
+
+Builder names and paths are included in the SCons target specification. This
+makes moving an item to another implementation an explicit execution-significant
+change even when the resulting command text happens to be identical.
+
+No built-in SolidCraft/OpenSCAD/Forge builder is introduced here. A later
+domain tool may ship a versioned builder directory, but generic CAD-CI only
+loads the repository path selected by configuration.
 
 ## Local nested item composition
 
