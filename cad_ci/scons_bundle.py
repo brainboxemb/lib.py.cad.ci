@@ -362,6 +362,9 @@ def copy_dependency_outputs(
     target_bundle: Path,
     source_root: str,
     outputs: tuple[str, ...] | list[str],
+    *,
+    cumulative_outputs: tuple[str, ...] | list[str] | None = None,
+    predecessor_bundle: Path | None = None,
 ) -> dict[str, Any]:
     """Build a consumer bundle from selected members of a dependency bundle.
 
@@ -410,6 +413,21 @@ def copy_dependency_outputs(
         dir=target_bundle.parent,
     ) as temp_name:
         temp_root = Path(temp_name)
+
+        if predecessor_bundle is not None:
+            predecessor_outputs = tuple(
+                str(value)
+                for value in read_bundle_manifest(predecessor_bundle)["outputs"]
+            )
+            materialize_bundle(
+                predecessor_bundle,
+                temp_root,
+                predecessor_outputs,
+            )
+
+        # Current-step ownership is exclusive. A predecessor may not own these
+        # paths by configuration contract, but remove defensively before copy.
+        remove_outputs(temp_root, normalized)
 
         try:
             with tarfile.open(source_bundle, "r") as archive:
@@ -470,5 +488,9 @@ def copy_dependency_outputs(
         return write_bundle(
             target_bundle,
             temp_root,
-            normalized,
+            (
+                tuple(str(value) for value in cumulative_outputs)
+                if cumulative_outputs is not None
+                else normalized
+            ),
         )
