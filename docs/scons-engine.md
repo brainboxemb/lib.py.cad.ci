@@ -111,12 +111,12 @@ steps:
       item:
         - model.py
         - input/**
-    run: [python, "$CAD_CI_BUILDER_PATH/build.py"]
+    run: 'python "$CAD_CI_BUILDER_PATH/build.py"'
     outputs:
       - generated
 
   - id: verify
-    run: [python, "$CAD_CI_BUILDER_PATH/verify.py"]
+    run: 'python "$CAD_CI_BUILDER_PATH/verify.py"'
     outputs:
       - verify.json
     timeout_seconds: 600
