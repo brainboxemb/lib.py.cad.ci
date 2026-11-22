@@ -25,6 +25,11 @@ be bypassed by a second scheduler or freshness engine.
 
 ### #79 — dependency-output copy without consumer copy processes
 
+The implementation and library conformance suite are green. The branch now
+prepares **lib.py.cad.ci 0.10.0**; merge is gated on the final release-prepared
+PR run, after which the repository's normal main release job must publish
+`v0.10.0` from that exact tested main commit.
+
 Consumer: `lib.py.solidcraft.forge` #261.
 
 Forge full-run evidence on the accepted jobs=2 stack shows that the two heavy
