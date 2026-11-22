@@ -1126,7 +1126,7 @@ for name in ("consumer-a", "consumer-b"):
             restored = self.run_selected(root, {"consumer-a"}, jobs=2)
             row = _rows(restored)["consumer-a:materialize"]
             self.assertEqual(row["outcome"], "CURRENT")
-            self.assertEqual(row["output_state"], "RESTORED")
+            self.assertEqual(row["output_state"], "REPAIRED")
             self.assertEqual(
                 (root / "build/consumer-a/result.txt").read_text(),
                 "consumer-a:one\n",
