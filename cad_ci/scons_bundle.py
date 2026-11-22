@@ -349,3 +349,126 @@ def materialize_bundle(
         raise BundleError("restored output does not match bundle metadata")
 
     return "REPAIRED" if existed_before else "RESTORED"
+
+
+def _path_is_within(path: PurePosixPath, parent: PurePosixPath) -> bool:
+    """Return whether path is parent itself or one of its descendants."""
+
+    return path.parts[: len(parent.parts)] == parent.parts
+
+
+def copy_dependency_outputs(
+    source_bundle: Path,
+    target_bundle: Path,
+    source_root: str,
+    outputs: tuple[str, ...] | list[str],
+) -> dict[str, Any]:
+    """Build a consumer bundle from selected members of a dependency bundle.
+
+    Only members below <source_root>/<declared output> are extracted. The
+    dependency's complete output tree is never materialized.
+    """
+
+    normalized = tuple(_normalize_output(str(value)) for value in outputs)
+    root_text = source_root.replace("\\", "/")
+    root = PurePosixPath(root_text)
+    if root_text in ("", "."):
+        root = PurePosixPath(".")
+    if (
+        root.is_absolute()
+        or ".." in root.parts
+        or ".cad-ci" in root.parts
+    ):
+        raise BundleError(f"unsafe dependency copy source: {source_root}")
+
+    manifest = read_bundle_manifest(source_bundle)
+    dependency_outputs = tuple(
+        PurePosixPath(str(name))
+        for name in manifest["outputs"]
+    )
+
+    selected_roots: dict[str, PurePosixPath] = {}
+    for output in normalized:
+        selected = (
+            PurePosixPath(output)
+            if root.as_posix() == "."
+            else root / PurePosixPath(output)
+        )
+        if not any(
+            _path_is_within(selected, dependency_output)
+            for dependency_output in dependency_outputs
+        ):
+            raise BundleError(
+                "dependency copy source is outside declared dependency output: "
+                + selected.as_posix()
+            )
+        selected_roots[output] = selected
+
+    target_bundle.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(
+        prefix=f".{target_bundle.name}.copy.",
+        dir=target_bundle.parent,
+    ) as temp_name:
+        temp_root = Path(temp_name)
+
+        try:
+            with tarfile.open(source_bundle, "r") as archive:
+                for member in archive.getmembers():
+                    if member.name == BUNDLE_MANIFEST:
+                        continue
+                    member_path = PurePosixPath(member.name)
+                    if member_path.is_absolute() or ".." in member_path.parts:
+                        raise BundleError(
+                            f"bundle member escapes declared output: {member.name}"
+                        )
+
+                    destination_name: str | None = None
+                    for output, selected in selected_roots.items():
+                        if _path_is_within(member_path, selected):
+                            relative = member_path.relative_to(selected)
+                            destination = PurePosixPath(output)
+                            if relative.parts:
+                                destination /= relative
+                            destination_name = destination.as_posix()
+                            break
+                    if destination_name is None:
+                        continue
+
+                    if member.issym() or member.islnk():
+                        raise BundleError(
+                            "dependency copy contains an unsupported link: "
+                            + member.name
+                        )
+                    destination_path = temp_root / Path(destination_name)
+                    if member.isdir():
+                        destination_path.mkdir(parents=True, exist_ok=True)
+                        destination_path.chmod(member.mode)
+                    elif member.isfile():
+                        destination_path.parent.mkdir(
+                            parents=True,
+                            exist_ok=True,
+                        )
+                        extracted = archive.extractfile(member)
+                        if extracted is None:
+                            raise BundleError(
+                                "dependency copy member is unreadable: "
+                                + member.name
+                            )
+                        with destination_path.open("wb") as handle:
+                            shutil.copyfileobj(extracted, handle)
+                        destination_path.chmod(member.mode)
+                    else:
+                        raise BundleError(
+                            "dependency copy contains unsupported entry: "
+                            + member.name
+                        )
+        except tarfile.TarError as exc:
+            raise BundleError(
+                f"could not read dependency output bundle: {source_bundle}"
+            ) from exc
+
+        return write_bundle(
+            target_bundle,
+            temp_root,
+            normalized,
+        )
