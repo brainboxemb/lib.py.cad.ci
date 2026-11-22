@@ -44,9 +44,12 @@ class Item:
     """One consumer-owned folder that can be planned and run independently.
 
     The tool treats `kind` as descriptive metadata only. Behaviour comes from
-    the item's own config, processing state, dependencies, watch paths and
-    ordered steps. `variables` is the validated, sorted repository-wide
-    environment mapping that applies to command actions.
+    the item's processing state, dependencies, watch paths and resolved builder
+    steps. Legacy items may still own steps directly during migration.
+    `variables` is the validated, sorted repository-wide environment mapping
+    that applies to command actions. `builder` and `builder_path` identify a
+    repository-owned shared builder when the item uses the declarative builder
+    configuration path.
     """
 
     id: str
@@ -61,3 +64,5 @@ class Item:
     config_data: dict[str, Any]
     process: bool = True
     variables: tuple[tuple[str, str], ...] = ()
+    builder: str | None = None
+    builder_path: Path | None = None
