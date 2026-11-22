@@ -717,7 +717,7 @@ def load_repository(repo: Path) -> dict[str, Item]:
                 raise ConfigError(
                     f"unknown builder {builder_name!r}: {config_path}"
                 ) from exc
-            steps, steps_path = _builder_steps(
+            steps, _ = _builder_steps(
                 repo,
                 builder_name,
                 builder_path,
@@ -733,7 +733,6 @@ def load_repository(repo: Path) -> dict[str, Item]:
                 default_timeout,
                 rel,
             )
-            steps_path = config_path
 
         items[item_id] = Item(
             id=item_id,
