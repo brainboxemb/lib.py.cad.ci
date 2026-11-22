@@ -59,6 +59,9 @@ variables:
 items:
   - tool
   - examples/*
+
+builders:
+  python-model: ci/builders/python-model
 ~~~
 
 `defaults.timeout_seconds` is optional.
@@ -72,42 +75,55 @@ form is deterministic.
 
 ### Item ci.yml
 
-Supported fields:
+The preferred item file is declarative:
 
 ~~~yaml
 id: simple-case
 kind: example
 process: true
+builder: python-model
 
 needs:
   - tool
 
 watch:
-  - examples/simple_case/**
-  - shared/**
+  item:
+    - model.py
+    - input/**
+  repo:
+    - shared/**
 
 strategy:
   affected: changed
   reuse: true
+~~~
+
+The root builder alias resolves to a repository directory. That directory owns
+one `builder.yml`:
+
+~~~yaml
+schema: 1
+description: Shared Python model build
 
 steps:
   - id: build
     inputs:
-      - examples/simple_case/build.py
-      - examples/simple_case/input/**
-      - shared/**
-    run: [python, build.py]
+      item:
+        - model.py
+        - input/**
+    run: [python, "$CAD_CI_BUILDER_PATH/build.py"]
     outputs:
       - generated
 
   - id: verify
-    inputs:
-      - examples/simple_case/verify.py
-    run: [python, verify.py]
+    run: [python, "$CAD_CI_BUILDER_PATH/verify.py"]
     outputs:
       - verify.json
     timeout_seconds: 600
 ~~~
+
+A shell command may expand `CAD_CI_BUILDER_PATH`; argv-style commands receive
+the same environment but do not perform shell expansion themselves.
 
 Rules:
 - `kind` is descriptive only;
@@ -118,11 +134,42 @@ Rules:
 - `process` is selection state and is not part of a step target signature;
 - `watch` is for Git-level item selection;
 - `inputs` is for SCons rebuild dependencies;
-- omitted step `inputs` inherits the item's `watch`;
-- item `ci.yml` is represented by step-spec Values, not as a broad file
-  dependency;
+- a builder-backed item automatically watches its complete builder directory;
+- explicit command-step inputs automatically include that builder directory;
+- omitted step `inputs` inherits the effective item `watch`;
+- builder name/path are represented in step-spec Values;
 - `strategy.reuse: false` means explicitly execute every active step and do not
   restore/store its target from CacheDir.
+
+For migration only, an existing item may still define inline `steps` instead
+of `builder`. An item must define exactly one of them.
+
+### Builder lowering
+
+Builder indirection is resolved by configuration loading before the SCons
+manifest is written:
+
+~~~text
+cad-ci.yml builder alias
+  -> repository-relative builder directory
+  -> builder.yml
+  -> validated ordered Step objects
+  -> existing Item / Step target graph
+~~~
+
+SCons never parses builder YAML and does not know SolidCraft, OpenSCAD, Forge or
+other domain types.
+
+The resolved builder alias and path are included in each target signature.
+Commands receive:
+
+~~~text
+CAD_CI_BUILDER
+CAD_CI_BUILDER_PATH
+~~~
+
+Both are empty for a legacy inline-step item. Commands continue to run with the
+item directory as their working directory.
 
 ## 3. Internal target model
 
