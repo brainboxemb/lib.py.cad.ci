@@ -1017,6 +1017,151 @@ out.mkdir(parents=True, exist_ok=True)
                 {"item:run": "BUILT"},
             )
 
+
+    def test_dependency_copy_projects_only_selected_subtrees(self):
+        """Copy targets read selected dependency members without full snapshots."""
+
+        self.require_scons()
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            _write(
+                root / "cad-ci.yml",
+                "schema: 1\n"
+                "items: [batch, consumer-a, consumer-b]\n",
+            )
+            _write(root / "batch" / "input.txt", "one\n")
+            _write(
+                root / "batch" / "build.py",
+                """import os
+from pathlib import Path
+
+out = Path(os.environ["CAD_CI_OUTPUT"]) / "items"
+value = Path(__file__).with_name("input.txt").read_text()
+for name in ("consumer-a", "consumer-b"):
+    target = out / name
+    (target / "generated").mkdir(parents=True, exist_ok=True)
+    (target / "result.txt").write_text(f"{name}:{value}")
+    (target / "generated" / "value.txt").write_text(f"{name}-generated:{value}")
+""",
+            )
+            _write(
+                root / "batch" / "ci.yml",
+                "id: batch\n"
+                "steps:\n"
+                "  - id: build\n"
+                "    inputs: [batch/input.txt, batch/build.py]\n"
+                "    run: [python, build.py]\n"
+                "    outputs: [items]\n",
+            )
+            for name in ("consumer-a", "consumer-b"):
+                _write(
+                    root / name / "ci.yml",
+                    f"id: {name}\n"
+                    "needs: [batch]\n"
+                    "steps:\n"
+                    "  - id: materialize\n"
+                    "    copy:\n"
+                    "      dependency: batch\n"
+                    "      source: items/{item_path}\n"
+                    "    outputs: [result.txt, generated]\n",
+                )
+
+            cold = self.run_selected(
+                root,
+                {"consumer-a", "consumer-b"},
+                jobs=2,
+            )
+            self.assertEqual(
+                _outcomes(cold),
+                {
+                    "batch:build": "BUILT",
+                    "consumer-a:materialize": "BUILT",
+                    "consumer-b:materialize": "BUILT",
+                },
+            )
+            for name in ("consumer-a", "consumer-b"):
+                row = _rows(cold)[f"{name}:materialize"]
+                self.assertEqual(row["action_type"], "copy")
+                self.assertTrue(row["action_executed"])
+                self.assertIsNone(row["exit_code"])
+                self.assertIsNone(row["timeout_seconds"])
+                self.assertRegex(row["started_at"], UTC_TIMESTAMP)
+                self.assertEqual(
+                    (root / "build" / name / "result.txt").read_text(),
+                    f"{name}:one\n",
+                )
+                self.assertEqual(
+                    (
+                        root
+                        / "build"
+                        / name
+                        / "generated"
+                        / "value.txt"
+                    ).read_text(),
+                    f"{name}-generated:one\n",
+                )
+                snapshot = (
+                    root
+                    / DEPENDENCY_RUN_ROOT
+                    / name
+                    / "materialize"
+                    / "batch"
+                )
+                self.assertFalse(snapshot.exists())
+
+            current = self.run_selected(
+                root,
+                {"consumer-a", "consumer-b"},
+                jobs=2,
+            )
+            for name in ("consumer-a", "consumer-b"):
+                row = _rows(current)[f"{name}:materialize"]
+                self.assertEqual(row["outcome"], "CURRENT")
+                self.assertEqual(row["action_type"], "copy")
+                self.assertFalse(row["action_executed"])
+                self.assertIsNone(row["started_at"])
+                self.assertIsNone(row["finished_at"])
+
+            (root / "build/consumer-a/result.txt").unlink()
+            restored = self.run_selected(root, {"consumer-a"}, jobs=2)
+            row = _rows(restored)["consumer-a:materialize"]
+            self.assertEqual(row["outcome"], "CURRENT")
+            self.assertEqual(row["output_state"], "REPAIRED")
+            self.assertEqual(
+                (root / "build/consumer-a/result.txt").read_text(),
+                "consumer-a:one\n",
+            )
+
+            _write(root / "batch" / "input.txt", "two\n")
+            changed = self.run_selected(
+                root,
+                {"consumer-a", "consumer-b"},
+                jobs=2,
+            )
+            self.assertEqual(
+                _rows(changed)["batch:build"]["outcome"],
+                "BUILT",
+            )
+            self.assertEqual(
+                (root / "build/consumer-a/result.txt").read_text(),
+                "consumer-a:two\n",
+            )
+            self.assertEqual(
+                (root / "build/consumer-b/result.txt").read_text(),
+                "consumer-b:two\n",
+            )
+
+            self.assertTrue((root / CACHE_ROOT).is_dir())
+            self.clean_runner_keep_cache(root)
+            cached = self.run_selected(root, {"consumer-a"}, jobs=2)
+            copy_row = _rows(cached)["consumer-a:materialize"]
+            self.assertEqual(copy_row["outcome"], "CACHE_RESTORED")
+            self.assertFalse(copy_row["action_executed"])
+            self.assertEqual(
+                (root / "build/consumer-a/result.txt").read_text(),
+                "consumer-a:two\n",
+            )
+
     def test_run_report_is_private_and_public_evidence_is_separate(self):
         self.require_scons()
         with tempfile.TemporaryDirectory() as tmp:
@@ -1036,7 +1181,7 @@ out.mkdir(parents=True, exist_ok=True)
             )
 
             report = json.loads((root / REPORT_PATH).read_text())
-            self.assertEqual(report["schema_version"], 4)
+            self.assertEqual(report["schema_version"], 5)
             self.assertEqual(report["jobs"], 1)
             self.assertRegex(report["started_at"], UTC_TIMESTAMP)
             self.assertRegex(report["finished_at"], UTC_TIMESTAMP)
@@ -1046,6 +1191,7 @@ out.mkdir(parents=True, exist_ok=True)
 
             built = _rows(cold)["item:build"]
             self.assertTrue(built["action_executed"])
+            self.assertEqual(built["action_type"], "command")
             self.assertRegex(built["started_at"], UTC_TIMESTAMP)
             self.assertRegex(built["finished_at"], UTC_TIMESTAMP)
             self.assertLessEqual(built["started_at"], built["finished_at"])
@@ -1053,7 +1199,7 @@ out.mkdir(parents=True, exist_ok=True)
 
             step_path = root / "build/item/.cad-ci/steps/build.json"
             step = json.loads(step_path.read_text())
-            self.assertEqual(step["schema"], 3)
+            self.assertEqual(step["schema"], 4)
             self.assertEqual(step["run_started_at"], report["started_at"])
             self.assertEqual(step["run_finished_at"], report["finished_at"])
             self.assertEqual(step["started_at"], built["started_at"])

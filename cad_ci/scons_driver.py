@@ -29,6 +29,7 @@ from SCons.Script import (
 from cad_ci.scons_bundle import (
     BundleError,
     bundle_sha256,
+    copy_dependency_outputs,
     materialize_bundle,
     remove_outputs,
     write_bundle,
@@ -172,6 +173,7 @@ def _action_error(
         "key": spec["key"],
         "status": status,
         "action_executed": started_at is not None,
+        "action_type": spec.get("action_type", "command"),
         "started_at": started_at,
         "finished_at": finished_at,
         "duration_seconds": round(duration, 3),
@@ -187,11 +189,13 @@ def _action_error(
 def _action_label(target, source, env) -> str:
     """Return the concise operator-facing label for one executed target."""
 
-    return f"CAD CI run: {env['CAD_CI_KEY']}"
+    spec = SPECS[str(env["CAD_CI_KEY"])]
+    verb = "copy" if spec.get("action_type") == "copy" else "run"
+    return f"CAD CI {verb}: {env['CAD_CI_KEY']}"
 
 
 def _execute_bundle(target, source, env) -> int:
-    """Materialize prerequisites, execute one step and write its bundle target."""
+    """Execute one command/copy action and write its cumulative bundle target."""
 
     key = str(env["CAD_CI_KEY"])
     spec = SPECS[key]
@@ -203,14 +207,98 @@ def _execute_bundle(target, source, env) -> int:
     bundle.unlink(missing_ok=True)
     result_path.unlink(missing_ok=True)
 
+    direct_dependency_keys = {
+        str(dependency["final_key"])
+        for dependency in spec["direct_dependencies"]
+    }
+
+    if spec.get("action_type") == "copy":
+        action_started_at = utc_now()
+        started = time.monotonic()
+        try:
+            copy = spec.get("copy") or {}
+            dependency_id = str(copy.get("dependency", ""))
+            descriptor = next(
+                (
+                    dependency
+                    for dependency in spec["direct_dependencies"]
+                    if str(dependency["item_id"]) == dependency_id
+                ),
+                None,
+            )
+            if descriptor is None:
+                raise BundleError(
+                    f"copy dependency is not a direct dependency: {dependency_id}"
+                )
+            source_spec = SPECS[str(descriptor["final_key"])]
+            source_bundle = _bundle_path(source_spec)
+            if not source_bundle.is_file():
+                raise BundleError(
+                    f"dependency bundle is missing: {dependency_id}"
+                )
+
+            predecessors = [
+                str(dependency_key)
+                for dependency_key in spec["materialize_before"]
+                if str(dependency_key) not in direct_dependency_keys
+            ]
+            if len(predecessors) > 1:
+                raise BundleError(
+                    f"copy target has multiple own predecessors: {key}"
+                )
+            predecessor_bundle = (
+                _bundle_path(SPECS[predecessors[0]])
+                if predecessors
+                else None
+            )
+
+            copy_dependency_outputs(
+                source_bundle,
+                bundle,
+                str(copy.get("source", ".")),
+                tuple(str(value) for value in spec["outputs"]),
+                cumulative_outputs=tuple(
+                    str(value) for value in spec["bundle_outputs"]
+                ),
+                predecessor_bundle=predecessor_bundle,
+            )
+        except (BundleError, OSError) as exc:
+            bundle.unlink(missing_ok=True)
+            return _action_error(
+                result_path,
+                spec,
+                status="output_error",
+                duration=time.monotonic() - started,
+                error=str(exc),
+                started_at=action_started_at,
+                finished_at=utc_now(),
+            )
+
+        action_finished_at = utc_now()
+        duration = time.monotonic() - started
+        _write_json(
+            result_path,
+            {
+                "key": spec["key"],
+                "status": "pass",
+                "action_executed": True,
+                "action_type": "copy",
+                "started_at": action_started_at,
+                "finished_at": action_finished_at,
+                "duration_seconds": round(duration, 3),
+                "exit_code": None,
+                "timeout_seconds": None,
+                "bundle_sha256": bundle_sha256(bundle),
+            },
+        )
+        print(f"CAD CI copied: {spec['key']}", flush=True)
+        return 0
+
     started = time.monotonic()
     try:
-        # Cumulative predecessor/final dependency bundles restore every output
-        # the current action may legitimately read.
-        direct_dependency_keys = {
-            str(dependency["final_key"])
-            for dependency in spec["direct_dependencies"]
-        }
+        # Cumulative predecessor bundles restore outputs owned by earlier steps.
+        # Command actions additionally receive target-private complete snapshots
+        # for each direct dependency.
         for dependency_key in spec["materialize_before"]:
             if str(dependency_key) not in direct_dependency_keys:
                 _materialize_spec(SPECS[str(dependency_key)])
@@ -299,6 +387,7 @@ def _execute_bundle(target, source, env) -> int:
             "key": spec["key"],
             "status": "pass",
             "action_executed": True,
+            "action_type": "command",
             "started_at": action_started_at,
             "finished_at": action_finished_at,
             "duration_seconds": round(duration, 3),

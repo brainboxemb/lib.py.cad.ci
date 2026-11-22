@@ -8,18 +8,30 @@ from typing import Any
 
 
 @dataclass(frozen=True)
-class Step:
-    """One command in an item's ordered CI flow.
+class DependencyCopy:
+    """One engine-owned copy from a direct dependency bundle."""
 
-    `run` is either an argv tuple or a shell command. `outputs` lists files
-    that must exist below the item's build directory after the step succeeds.
-    `timeout_seconds` is the effective repository default or step override.
-    `inputs` is an optional repository-relative pattern set; None means inherit
-    the owning item's `watch` patterns.
+    dependency: str
+    source: str
+
+
+@dataclass(frozen=True)
+class Step:
+    """One action in an item's ordered CI flow.
+
+    Exactly one of `run` or `copy` is configured. A command `run` is either
+    an argv tuple or a shell command. A `copy` action projects declared output
+    from one direct dependency bundle without launching a consumer subprocess.
+
+    `outputs` lists files/directories owned below the item's build directory.
+    `timeout_seconds` applies only to command steps. `inputs` is an optional
+    repository-relative pattern set for command steps; None means inherit the
+    owning item's `watch` patterns.
     """
 
     id: str
-    run: str | tuple[str, ...]
+    run: str | tuple[str, ...] | None = None
+    copy: DependencyCopy | None = None
     outputs: tuple[str, ...] = ()
     timeout_seconds: int | None = None
     inputs: tuple[str, ...] | None = None
@@ -30,9 +42,9 @@ class Item:
     """One consumer-owned folder that can be planned and run independently.
 
     The tool treats `kind` as descriptive metadata only. Behaviour comes from
-    the item's own config, processing state, dependencies, watch paths and ordered steps.
-    `variables` is the validated, sorted repository-wide environment mapping
-    that applies to every command.
+    the item's own config, processing state, dependencies, watch paths and
+    ordered steps. `variables` is the validated, sorted repository-wide
+    environment mapping that applies to command actions.
     """
 
     id: str
