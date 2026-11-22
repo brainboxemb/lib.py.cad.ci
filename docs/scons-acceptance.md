@@ -858,3 +858,113 @@ Required:
 
 The regression proof must assert structural work reduction (one inventory and
 active-only specs) rather than a fragile wall-clock threshold.
+
+## Case 31 - dependency-output copy without complete dependency snapshot
+
+Repository:
+
+```text
+batch/
+  final output:
+    items/
+      consumer-a/
+        result.txt
+        generated/a.txt
+      consumer-b/
+        result.txt
+        generated/b.txt
+
+consumer-a/
+consumer-b/
+```
+
+Both consumers directly need `batch` and use:
+
+```yaml
+steps:
+  - id: materialize
+    copy:
+      dependency: batch
+      source: "items/{item_path}"
+    outputs:
+      - result.txt
+      - generated
+```
+
+Use item paths `consumer-a` and `consumer-b`.
+
+Required sequences:
+
+1. cold run with jobs=2:
+   - batch BUILT once;
+   - both copy targets BUILT;
+   - both consumer outputs exactly match their selected dependency subtrees;
+   - copy target action intervals may overlap;
+   - no consumer subprocess/script is required;
+   - no complete batch output is materialized below either copy target's
+     target-private dependency snapshot root;
+   - public batch output and both consumer outputs are valid after post-run
+     materialization.
+
+2. identical run:
+   - batch CURRENT;
+   - both copy targets CURRENT;
+   - no copy action timestamps are present.
+
+3. change only bytes below `items/consumer-a` in the batch input/result:
+   - batch BUILT;
+   - consumer-a copy BUILT;
+   - consumer-b may be BUILT because its direct dependency target changed under
+     the current item-level dependency signature model; correctness requires its
+     output remain byte-identical.
+   - no stale output survives.
+
+4. remove public consumer outputs while preserving valid target/state:
+   - copy target may remain CURRENT;
+   - post-run materialization restores the consumer outputs from its own target
+     bundle.
+
+5. fresh CacheDir restore:
+   - copy target restores normally with no copy action execution;
+   - output materializes correctly.
+
+6. configuration errors before SCons:
+   - copy dependency is not in direct `needs`;
+   - both `run` and `copy` are present;
+   - neither `run` nor `copy` is present;
+   - copy step has no outputs;
+   - copy step declares `inputs`;
+   - unsafe/absolute/traversing source;
+   - unknown source substitution token.
+
+7. execution errors:
+   - selected source/output is absent from the dependency final bundle;
+   - source root is not contained by a dependency-declared output;
+   - dependency bundle contains a link or unsafe selected member.
+
+8. nested consumer path:
+   - item path `examples/model-a/build123d`;
+   - `source: "items/{item_path}"` resolves exactly to
+     `items/examples/model-a/build123d`;
+   - only that subtree is projected.
+
+Evidence assertions:
+
+- report/public step evidence identify `action_type=copy`;
+- successful BUILT copy has timestamps/duration, null exit/timeout;
+- CURRENT/CACHE_RESTORED copy has null action timestamps;
+- target/bundle digests and output manifest follow normal evidence semantics;
+- complete item evidence remains valid.
+
+## Dependency-copy release gate addition
+
+Before releasing #79:
+
+- Case 31 exists in library conformance tests;
+- existing command-step Cases 4, 17, 27-29 remain green unchanged;
+- engine schema invalidation is proven;
+- the thin tool consumes the released library without implementing copy logic;
+- the permanent external acceptance repository proves at least one copy target
+  using the exact released tool/library pair;
+- only then may Forge replace projection-only materializer commands and remeasure
+  its full-run tail.
