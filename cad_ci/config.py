@@ -15,7 +15,7 @@ from typing import Any
 
 import yaml
 
-from .model import Item, Step
+from .model import DependencyCopy, Item, Step
 
 
 class ConfigError(ValueError):
@@ -282,6 +282,55 @@ def _output_path(raw: str, path: Path, step_id: str) -> str:
     return parsed.as_posix()
 
 
+def _dependency_copy(
+    value: object,
+    path: Path,
+    step_id: str,
+    item_root: Path,
+) -> DependencyCopy:
+    """Validate one engine-owned dependency-output copy action."""
+
+    if not isinstance(value, dict):
+        raise ConfigError(f"step copy must be a mapping: {path}:{step_id}")
+    invalid = sorted(set(value) - {"dependency", "source"})
+    if invalid:
+        raise ConfigError(
+            f"step copy contains unsupported field(s): {path}:{step_id}: "
+            + ", ".join(invalid)
+        )
+
+    dependency = value.get("dependency")
+    source = value.get("source")
+    if not isinstance(dependency, str) or not _ID.fullmatch(dependency):
+        raise ConfigError(
+            f"copy dependency must be a valid item id: {path}:{step_id}"
+        )
+    if not isinstance(source, str) or not source:
+        raise ConfigError(f"copy source must be a string: {path}:{step_id}")
+
+    rendered = source.replace("{item_path}", item_root.as_posix())
+    if "{" in rendered or "}" in rendered:
+        raise ConfigError(
+            f"copy source contains unsupported substitution: {path}:{step_id}"
+        )
+
+    normalized = rendered.replace("\\", "/")
+    parsed = PurePosixPath(normalized)
+    if (
+        parsed.is_absolute()
+        or ".." in parsed.parts
+        or ".cad-ci" in parsed.parts
+    ):
+        raise ConfigError(
+            f"copy source must stay inside dependency output: {path}:{step_id}"
+        )
+    source_path = parsed.as_posix()
+    if source_path in ("", "."):
+        source_path = "."
+
+    return DependencyCopy(dependency=dependency, source=source_path)
+
+
 def _step(
     data: object,
     path: Path,
@@ -294,14 +343,51 @@ def _step(
         raise ConfigError(f"step must be a mapping: {path}")
 
     step_id = data.get("id")
-    run = data.get("run")
     if not isinstance(step_id, str) or not _ID.fullmatch(step_id):
         raise ConfigError(
             "step id must use letters, numbers, dot, dash or underscore: "
             f"{path}"
         )
 
-    # A list executes directly. A string deliberately requests shell syntax.
+    has_run = "run" in data
+    has_copy = "copy" in data
+    if has_run == has_copy:
+        raise ConfigError(
+            f"step requires exactly one of run or copy: {path}:{step_id}"
+        )
+
+    outputs = tuple(
+        _output_path(output, path, step_id)
+        for output in _strings(data.get("outputs"), "outputs", path)
+    )
+
+    if has_copy:
+        if not outputs:
+            raise ConfigError(
+                f"copy step requires at least one output: {path}:{step_id}"
+            )
+        if "inputs" in data:
+            raise ConfigError(
+                f"copy step does not accept inputs: {path}:{step_id}"
+            )
+        if "timeout_seconds" in data:
+            raise ConfigError(
+                f"copy step does not accept timeout_seconds: {path}:{step_id}"
+            )
+        return Step(
+            id=step_id,
+            copy=_dependency_copy(
+                data.get("copy"),
+                path,
+                step_id,
+                item_root,
+            ),
+            outputs=outputs,
+            timeout_seconds=None,
+            inputs=(),
+        )
+
+    run = data.get("run")
     if isinstance(run, list):
         if not run or not all(isinstance(x, str) for x in run):
             raise ConfigError(
@@ -313,10 +399,6 @@ def _step(
     else:
         raise ConfigError(f"step run is required: {path}:{step_id}")
 
-    outputs = tuple(
-        _output_path(output, path, step_id)
-        for output in _strings(data.get("outputs"), "outputs", path)
-    )
     inputs = _source_patterns(
         data.get("inputs"),
         "inputs",
@@ -337,7 +419,6 @@ def _step(
         timeout_seconds=timeout_seconds,
         inputs=inputs,
     )
-
 
 def _check_output_ownership(steps: tuple[Step, ...], path: Path) -> None:
     """Reject duplicate or parent/child output ownership between steps."""
@@ -546,6 +627,39 @@ def load_repository(repo: Path) -> dict[str, Item]:
                     f"processed item {item.id} needs non-processed item(s): "
                     + ", ".join(excluded)
                 )
+
+    for item in items.values():
+        for step in item.steps:
+            copy = step.copy
+            if copy is None:
+                continue
+            if copy.dependency not in item.needs:
+                raise ConfigError(
+                    "copy dependency must be a direct need: "
+                    f"{item.config_path}:{step.id}: {copy.dependency}"
+                )
+            dependency = items[copy.dependency]
+            dependency_outputs = tuple(
+                output
+                for dependency_step in dependency.steps
+                for output in dependency_step.outputs
+            )
+            source_root = PurePosixPath(copy.source)
+            for output in step.outputs:
+                selected = (
+                    PurePosixPath(output)
+                    if copy.source == "."
+                    else source_root / PurePosixPath(output)
+                )
+                if not any(
+                    selected.parts[: len(PurePosixPath(candidate).parts)]
+                    == PurePosixPath(candidate).parts
+                    for candidate in dependency_outputs
+                ):
+                    raise ConfigError(
+                        "copy source is outside dependency declared output: "
+                        f"{item.config_path}:{step.id}: {selected.as_posix()}"
+                    )
 
     _check_nested_item_output_roots(items)
     _check_cycles(items)
