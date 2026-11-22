@@ -9,7 +9,8 @@
 Keep this repository domain-neutral.
 
 Generic configuration, Git selection, SCons translation, execution wrappers,
-evidence, durable build output, Pages and publication mechanics belong here.
+evidence, durable build output, **complete-scope state/resolution**, Pages and
+publication mechanics belong here.
 Forge stages, SolidCraft rules and CAD-domain checks do not.
 
 SCons is the only generic rebuild/reuse engine. Do not add a parallel custom

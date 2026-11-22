@@ -398,6 +398,33 @@ items. For main updates it passes both:
 Deletion semantics remain entirely in `lib.py.cad.ci`.
 
 
+## Durable complete-scope adapter API
+
+Hosted workflow adapters need two operations around the SCons run:
+
+```text
+before run:
+  materialize generated build branch
+  -> resolve complete scope
+       -> existing scope: stored source_commit = incremental base
+       -> first named scope: full run
+       -> missing main: error
+
+after run:
+  load repository config
+  -> select affected items from base..head, or all processed items for first run
+  -> update/prepare main or named complete scope
+  -> publish via existing generated-branch publisher
+```
+
+These are generic CAD-CI semantics, so they live in `cad_ci.durable`.
+The module composes existing planner, build-store and Git publication APIs; it
+does not introduce another storage format, selector or publication engine.
+
+`tool.cad.ci` may expose this behavior through workflow helper arguments and
+GitHub output files, but must not read durable `build.json` directly or
+choose between `update-main`, `update-named` and `prepare-named` itself.
+
 ## Named complete publication scopes
 
 Long-lived integration lanes use the existing generated branches rather than

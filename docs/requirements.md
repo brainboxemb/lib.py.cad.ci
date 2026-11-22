@@ -351,6 +351,33 @@ Updating one complete scope replaces only selected item paths inside that scope
 and preserves every sibling scope. Resolving a PR view starts from main and
 overlays the sparse PR paths. Removing one PR changes only that PR namespace.
 
+### Durable complete-scope runtime state
+
+Long-lived complete scopes (`main` and safe caller-named scopes) expose one
+generic library state contract for hosted CI adapters.
+
+Given a materialized generated build branch, a complete scope name and the
+current exact source commit, the library must:
+
+- validate the scope with the **same** complete-scope rules used by build-store
+  installation; `pr`, traversing paths and unsafe names are never valid
+  complete scopes;
+- load and validate an existing complete-scope manifest through the normal
+  build-store manifest reader rather than parsing `build.json` in a tool;
+- use the stored exact `source_commit` as the incremental base;
+- require a full run for the first publication of a caller-named complete
+  scope;
+- fail if stable `main` has no durable baseline instead of silently treating
+  stable integration as a first run;
+- prepare selected/current item membership through the existing planner and
+  build-store complete-scope functions;
+- publish through the existing generated-branch publication API with source
+  freshness checking.
+
+A CLI/workflow adapter may supply paths, refs and GitHub outputs, but it must
+not implement a second durable-scope validator, manifest parser, selection
+policy or publication state machine.
+
 ## 13. Pages
 
 Stable Pages content lives at the root of `gh-pages`. PR previews live under

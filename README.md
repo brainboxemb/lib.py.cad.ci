@@ -14,7 +14,7 @@ The library owns:
 - translation of item/step configuration to SCons targets;
 - timeout/output handling around consumer commands;
 - structured execution evidence;
-- durable build output;
+- durable build output and complete-scope state/resolution;
 - Pages handling;
 - safe generated-branch publication.
 
