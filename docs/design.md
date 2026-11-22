@@ -87,24 +87,32 @@ repository.items
 repository.pages
 ```
 
-The durable integration helper receives already-selected items and the complete
-current processed item set from the existing planner boundary. It composes only
-existing build-store operations:
+The existing `cad_ci.durable` module remains the only high-level complete-scope
+adapter. No second integration helper is introduced.
 
 ```text
-previous scope absent
-  -> prepare_main / prepare_named using all current items
+generated build branch absent
+  -> first main/named scope = complete full run
 
-previous scope present
-  -> update_main / update_named using selected replacements
-     + complete current membership
+generated build branch present
+  -> resolve stored scope source commit
+  -> existing scope: update selected replacements + current membership
+  -> missing named scope: prepare complete named scope
+  -> missing main scope: fail closed
 
-resulting complete scope
-  -> resolve configured Pages site path
+published complete build scope
+  -> resolve configured Pages site
+  -> copy site to temporary publication tree
+  -> add generic source/build/scope provenance
+  -> publish stable root or named subtree
 ```
 
-This helper is local filesystem/state composition. Git fetch/push and GitHub
-workflow orchestration stay outside the library API.
+Stable Pages preserve names are derived from valid named complete scopes already
+present in the materialized generated build tree. Lane names therefore are not
+duplicated in root publication configuration or workflow inputs.
+
+Git fetch/push remains delegated to `cad_ci.git_publish`; GitHub workflow
+orchestration stays outside the library API.
 
 ## Repository variables
 
@@ -543,13 +551,14 @@ together preserve each other's sibling directories.
 ### Pages
 
 A named Pages publication replaces exactly one validated top-level subtree.
-Stable-root publication cannot infer which arbitrary top-level directories are
-development previews because normal stable sites also own top-level
-directories. The caller therefore supplies the exact named-subtree keep set
-when replacing the stable root.
+
+For the durable-lane lifecycle, stable publication derives its named keep set
+from the valid named complete scopes already materialized from the generated
+build branch. This makes the build store the single durable scope inventory and
+avoids repeating lane names in consumer publication configuration.
+
+The lower-level `publish_pages(... preserve_subtrees=...)` API remains
+available for callers outside this durable-lane contract.
 
 PR previews remain under `previews/pr-<number>` and are always preserved by
 stable publication independently of the named keep set.
-
-This keeps publication mechanics generic while leaving lane naming and site
-layout policy with the consumer.
