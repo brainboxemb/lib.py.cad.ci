@@ -356,12 +356,15 @@ def materialize_generated_branch(
     branch: str,
     out: Path,
     remote: str = "origin",
-) -> str:
+    missing_ok: bool = False,
+) -> str | None:
     """Fetch one generated branch and copy its tree to `out`.
 
-    Checkout-local HTTP auth from actions/checkout is copied before fetch so
-    private repositories use the same credentials as publication. The returned
-    SHA is the exact remote branch commit that was materialized.
+    Checkout-local HTTP auth from actions/checkout is copied before remote
+    inspection/fetch so private repositories use the same credentials as
+    publication. When `missing_ok` is true, an absent remote generated branch
+    produces an empty output directory and returns None. Other Git failures
+    remain errors.
     """
 
     remote_url = _remote_url(source_repo, remote)
@@ -371,6 +374,32 @@ def materialize_generated_branch(
         _git(work, "init", "--quiet")
         _copy_auth_config(source_repo, work)
         _git(work, "remote", "add", "origin", remote_url)
+
+        probe = _git(
+            work,
+            "ls-remote",
+            "--exit-code",
+            "origin",
+            f"refs/heads/{branch}",
+            check=False,
+        )
+        if probe.returncode == 2:
+            if not missing_ok:
+                raise GitPublishError(f"generated branch does not exist: {branch}")
+            if out.exists():
+                if out.is_dir():
+                    shutil.rmtree(out)
+                else:
+                    out.unlink()
+            out.mkdir(parents=True, exist_ok=True)
+            return None
+        if probe.returncode != 0:
+            message = (
+                probe.stderr.strip()
+                or probe.stdout.strip()
+                or f"could not inspect branch {branch}"
+            )
+            raise GitPublishError(message)
 
         fetched = _git(
             work,
