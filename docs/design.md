@@ -506,11 +506,12 @@ Hosted workflow adapters need two operations around the SCons run:
 
 ```text
 before run:
-  materialize generated build branch
-  -> resolve complete scope
+  inspect/materialize generated build branch
+  -> branch absent: first main/named publication = full run
+  -> branch present: resolve complete scope
        -> existing scope: stored source_commit = incremental base
        -> first named scope: full run
-       -> missing main: error
+       -> missing main: fail closed
 
 after run:
   load repository config
@@ -525,7 +526,8 @@ does not introduce another storage format, selector or publication engine.
 
 `tool.cad.ci` may expose this behavior through workflow helper arguments and
 GitHub output files, but must not read durable `build.json` directly or
-choose between `update-main`, `update-named` and `prepare-named` itself.
+choose between `prepare-main`, `update-main`, `prepare-named` and
+`update-named` itself.
 
 ## Named complete publication scopes
 
