@@ -30,10 +30,10 @@ Work order:
    publication functions; no new storage or execution engine.
 3. Unit-test missing/existing main/named scopes, validation, provenance,
    selection and publication delegation.
-4. Release the library only after its CI is green.
-5. Update `tool.cad.ci` to the exact library release and remove its duplicate
-   validator/manifest/parser/publication orchestration.
-6. Re-run `tool.cad.ci.test` before any Forge/CAD repin.
+4. Candidate library/tool pair has passed external tool.cad.ci.test acceptance.
+5. Publish `0.11.1` from the reviewed PR.
+6. Pin the exact released library in `tool.cad.ci`, rerun its CI/external
+   acceptance, then proceed to the tool release before any Forge/CAD repin.
 
 ## Open issue assessment — 2026-11-22
 
