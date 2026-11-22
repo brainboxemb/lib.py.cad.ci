@@ -905,5 +905,122 @@ class ConfigTests(unittest.TestCase):
 
 
 
+    def test_shared_builder_keeps_item_config_declarative(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp)
+            (repo / "cad-ci.yml").write_text(
+                "schema: 1\n"
+                "items: [a, b]\n"
+                "builders:\n"
+                "  shared: ci/builders/shared\n",
+                encoding="utf-8",
+            )
+            builder = repo / "ci" / "builders" / "shared"
+            builder.mkdir(parents=True)
+            (builder / "builder.yml").write_text(
+                "schema: 1\n"
+                "steps:\n"
+                "  - id: build\n"
+                "    inputs:\n"
+                "      item: [model.py]\n"
+                "    run: [python, -c, 'print(1)']\n"
+                "    outputs: [result.txt]\n",
+                encoding="utf-8",
+            )
+            for name in ("a", "b"):
+                folder = repo / name
+                folder.mkdir()
+                (folder / "ci.yml").write_text(
+                    f"id: {name}\n"
+                    "builder: shared\n"
+                    "watch:\n"
+                    "  item: [model.py]\n",
+                    encoding="utf-8",
+                )
+
+            items = load_repository(repo)
+            for name in ("a", "b"):
+                item = items[name]
+                self.assertEqual(item.builder, "shared")
+                self.assertEqual(item.builder_path, Path("ci/builders/shared"))
+                self.assertEqual(
+                    item.watch,
+                    (f"{name}/model.py", "ci/builders/shared/**"),
+                )
+                self.assertEqual(
+                    item.steps[0].inputs,
+                    (f"{name}/model.py", "ci/builders/shared/**"),
+                )
+                self.assertEqual(item.steps[0].outputs, ("result.txt",))
+
+    def test_item_rejects_builder_and_inline_steps_together(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp)
+            (repo / "cad-ci.yml").write_text(
+                "schema: 1\n"
+                "items: [a]\n"
+                "builders: {shared: ci/builders/shared}\n",
+                encoding="utf-8",
+            )
+            builder = repo / "ci" / "builders" / "shared"
+            builder.mkdir(parents=True)
+            (builder / "builder.yml").write_text(
+                "schema: 1\n"
+                "steps: [{id: build, run: [python, -c, 'print(1)']}]\n",
+                encoding="utf-8",
+            )
+            folder = repo / "a"
+            folder.mkdir()
+            (folder / "ci.yml").write_text(
+                "builder: shared\n"
+                "steps: [{id: local, run: [python, -c, 'print(2)']}]\n",
+                encoding="utf-8",
+            )
+
+            with self.assertRaisesRegex(
+                ConfigError,
+                "exactly one of builder or steps",
+            ):
+                load_repository(repo)
+
+    def test_unknown_builder_is_rejected(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp)
+            (repo / "cad-ci.yml").write_text(
+                "schema: 1\nitems: [a]\n",
+                encoding="utf-8",
+            )
+            folder = repo / "a"
+            folder.mkdir()
+            (folder / "ci.yml").write_text(
+                "builder: missing\n",
+                encoding="utf-8",
+            )
+
+            with self.assertRaisesRegex(ConfigError, "unknown builder"):
+                load_repository(repo)
+
+    def test_builder_path_must_stay_inside_repository_source(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp)
+            (repo / "cad-ci.yml").write_text(
+                "schema: 1\n"
+                "items: [a]\n"
+                "builders: {bad: ../builder}\n",
+                encoding="utf-8",
+            )
+            folder = repo / "a"
+            folder.mkdir()
+            (folder / "ci.yml").write_text(
+                "builder: bad\n",
+                encoding="utf-8",
+            )
+
+            with self.assertRaisesRegex(
+                ConfigError,
+                "builder path must stay inside source paths",
+            ):
+                load_repository(repo)
+
 if __name__ == "__main__":
     unittest.main()
