@@ -358,10 +358,6 @@ class PublishDurableScopeTests(unittest.TestCase):
             publish.assert_not_called()
 
 
-if __name__ == "__main__":
-    unittest.main()
-
-
 class PublishDurablePagesTests(unittest.TestCase):
     def repository(self, *, pages=True):
         from types import SimpleNamespace
@@ -513,3 +509,7 @@ class PublishDurablePagesTests(unittest.TestCase):
 
             self.assertIsNone(result)
             publish.assert_not_called()
+
+
+if __name__ == "__main__":
+    unittest.main()
