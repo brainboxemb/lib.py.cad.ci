@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.12.0
+
+- add repository-owned shared builder aliases so item `ci.yml` can select a
+  declarative `builder` instead of embedding executable `run` steps;
+- load executable steps from `<builder>/builder.yml` while lowering to the
+  existing normalized `Item` / `Step` graph and preserving SCons as the
+  single execution and rebuild engine;
+- automatically include the complete builder directory in Git selection and
+  command-step SCons inputs so shared implementation changes select and
+  invalidate every using item;
+- expose `CAD_CI_BUILDER` and `CAD_CI_BUILDER_PATH` to shared builder
+  commands;
+- retain legacy inline item `steps` as a migration path while rejecting items
+  that configure both builder and inline steps, or neither.
+
 ## 0.11.1
 
 - move generic durable complete-scope state resolution from tool.cad.ci into
