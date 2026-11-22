@@ -10,24 +10,56 @@ A Forge or CAD consumer must not migrate until one exact released
 
 ## 1. Configuration ownership
 
-The root `cad-ci.yml` owns repository-wide CI settings and item discovery.
+The root `cad-ci.yml` owns repository-wide CI settings, item discovery and
+optional aliases for repository-owned builders.
 
-Each item `ci.yml` owns:
+Each normal item `ci.yml` is declarative and owns:
 - item ID and descriptive kind;
 - optional explicit `process` participation;
+- one builder reference;
 - direct item dependencies;
 - coarse Git-selection paths;
 - affected-item strategy;
+- cache/reuse policy.
+
+A repository-owned builder directory owns the executable implementation in
+`builder.yml`:
 - ordered steps;
 - exact step inputs where narrower inputs are useful;
-- commands;
+- commands or engine-owned copy actions;
 - declared outputs;
-- execution timeout;
-- cache/reuse policy.
+- execution timeout overrides.
+
+The root maps a stable builder name to its directory, for example:
+
+```yaml
+schema: 1
+items: [models/*]
+builders:
+  solidcraft-model: ci/builders/solidcraft-model
+```
+
+An item then selects the implementation without embedding it:
+
+```yaml
+id: simple-mft
+kind: model
+builder: solidcraft-model
+watch:
+  item: [model.py, model.yml]
+```
+
+Changing a builder directory is an execution-significant and selection-significant
+change for every processed item that uses that builder.
+
+Legacy item-local `steps` remain readable during migration, but an item may
+configure exactly one of `builder` or `steps`. New consumers should use the
+builder reference path.
 
 Generic behaviour must not be hidden in GitHub Actions YAML or consumer helper
 scripts. Generic code must not know Forge, SolidCraft, model, qualification,
-integration, native or gate semantics.
+integration, native or gate semantics. Domain-specific builders belong to the
+consumer repository or a separately versioned domain tool, not this library.
 
 ### Repository variables
 
@@ -120,8 +152,13 @@ CAD CI must not run a second fingerprint/reuse engine beside SCons.
 
 A step may declare `inputs` as repository-relative file/glob patterns.
 
-When `inputs` is omitted, the step inherits the item's `watch` patterns so
-existing/simple consumers remain valid.
+When `inputs` is omitted, the step inherits the item's effective `watch`
+patterns so existing/simple consumers remain valid. For builder-backed items,
+the effective watch set also includes the complete builder directory.
+
+When a builder command declares explicit step inputs, the builder directory is
+still added as an execution input. A builder implementation change therefore
+cannot leave an otherwise selected target `CURRENT`.
 
 The item's own `ci.yml` is not treated as an undifferentiated file input.
 Relevant step configuration is represented in the step's SCons target
@@ -149,6 +186,8 @@ Consumer commands still run from the item source folder and receive:
 - `CAD_CI_REPO`;
 - `CAD_CI_ITEM`;
 - `CAD_CI_ITEM_PATH`;
+- `CAD_CI_BUILDER` (empty for legacy inline-step items);
+- `CAD_CI_BUILDER_PATH` (absolute resolved builder directory, or empty);
 - `CAD_CI_OUTPUT`;
 - validated direct-dependency output context.
 
