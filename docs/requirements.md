@@ -89,18 +89,26 @@ site as:
 
 The resolved path must be a directory when Pages publication is requested.
 
-A high-level durable integration operation composes the existing complete-scope
-build-store behavior:
-- with no previous complete scope, all current processed items are required and
-  a complete scope is prepared;
-- with a previous scope, only selected replacements are taken from the local
-  candidate while current configured membership remains authoritative;
-- `main` uses stable-scope semantics;
-- any other safe scope name uses named-scope semantics.
+The existing durable lifecycle remains authoritative:
+- if the generated build branch does not yet exist, either stable `main` or a
+  named scope starts as a complete full run;
+- if the generated build branch exists but its stable `main/` scope is
+  missing, stable integration fails closed instead of silently rebuilding a
+  replacement baseline;
+- with an existing complete scope, only selected replacements are taken from
+  the local candidate while current configured membership remains authoritative.
 
-This operation does not run SCons, select items, publish Git refs or build a
-site. Those responsibilities remain with the existing planner/runner,
-publication layer and consumer-owned builder implementation.
+After build-scope publication, configured Pages publication uses a temporary
+copy of the generated site and writes generic `provenance.json` containing
+the source commit, published build-branch commit and complete scope name. The
+durable build output itself is not mutated after publication.
+
+Named Pages replaces only its own safe subtree. Stable Pages automatically
+preserves subtrees whose names correspond to valid named complete scopes in the
+materialized generated build tree, as well as the existing PR preview area.
+
+This lifecycle does not run SCons or build a domain site. Those responsibilities
+remain with the existing planner/runner and the consumer-owned builder.
 
 ### Repository variables
 
