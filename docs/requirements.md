@@ -61,6 +61,47 @@ scripts. Generic code must not know Forge, SolidCraft, model, qualification,
 integration, native or gate semantics. Domain-specific builders belong to the
 consumer repository or a separately versioned domain tool, not this library.
 
+### Durable publication source
+
+Root `cad-ci.yml` may optionally identify one generated Pages site:
+
+```yaml
+publication:
+  pages:
+    item: site
+    output: site
+```
+
+The referenced item:
+- must exist and participate in processing;
+- owns its build implementation through the normal item/builder contract;
+- must declare the configured output exactly as one of its step outputs.
+
+The publication block is declarative metadata only. It contains no executable
+command, Git branch name or GitHub-specific setting.
+
+For a materialized complete `main` or named scope, CAD-CI resolves the Pages
+site as:
+
+```text
+<complete scope>/<item source path>/<configured output>
+```
+
+The resolved path must be a directory when Pages publication is requested.
+
+A high-level durable integration operation composes the existing complete-scope
+build-store behavior:
+- with no previous complete scope, all current processed items are required and
+  a complete scope is prepared;
+- with a previous scope, only selected replacements are taken from the local
+  candidate while current configured membership remains authoritative;
+- `main` uses stable-scope semantics;
+- any other safe scope name uses named-scope semantics.
+
+This operation does not run SCons, select items, publish Git refs or build a
+site. Those responsibilities remain with the existing planner/runner,
+publication layer and consumer-owned builder implementation.
+
 ### Repository variables
 
 The root `cad-ci.yml` may define an optional `variables` mapping.
