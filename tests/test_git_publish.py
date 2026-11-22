@@ -403,6 +403,25 @@ class GitPublishTests(unittest.TestCase):
                     out=root / "out",
                 )
 
+    def test_missing_generated_branch_can_be_first_publication(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source, _ = init_remote(root)
+            out = root / "out"
+            out.mkdir()
+            (out / "stale").write_text("stale", encoding="utf-8")
+
+            result = materialize_generated_branch(
+                source_repo=source,
+                branch="missing",
+                out=out,
+                missing_ok=True,
+            )
+
+            self.assertIsNone(result)
+            self.assertTrue(out.is_dir())
+            self.assertEqual(tuple(out.iterdir()), ())
+
     def test_generated_branches_preserve_named_sibling_scopes(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

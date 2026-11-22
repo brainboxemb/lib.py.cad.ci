@@ -61,6 +61,55 @@ scripts. Generic code must not know Forge, SolidCraft, model, qualification,
 integration, native or gate semantics. Domain-specific builders belong to the
 consumer repository or a separately versioned domain tool, not this library.
 
+### Durable publication source
+
+Root `cad-ci.yml` may optionally identify one generated Pages site:
+
+```yaml
+publication:
+  pages:
+    item: site
+    output: site
+```
+
+The referenced item:
+- must exist and participate in processing;
+- owns its build implementation through the normal item/builder contract;
+- must declare the configured output exactly as one of its step outputs.
+
+The publication block is declarative metadata only. It contains no executable
+command, Git branch name or GitHub-specific setting.
+
+For a materialized complete `main` or named scope, CAD-CI resolves the Pages
+site as:
+
+```text
+<complete scope>/<item source path>/<configured output>
+```
+
+The resolved path must be a directory when Pages publication is requested.
+
+The existing durable lifecycle remains authoritative:
+- if the generated build branch does not yet exist, either stable `main` or a
+  named scope starts as a complete full run;
+- if the generated build branch exists but its stable `main/` scope is
+  missing, stable integration fails closed instead of silently rebuilding a
+  replacement baseline;
+- with an existing complete scope, only selected replacements are taken from
+  the local candidate while current configured membership remains authoritative.
+
+After build-scope publication, configured Pages publication uses a temporary
+copy of the generated site and writes generic `provenance.json` containing
+the source commit, published build-branch commit and complete scope name. The
+durable build output itself is not mutated after publication.
+
+Named Pages replaces only its own safe subtree. Stable Pages automatically
+preserves subtrees whose names correspond to valid named complete scopes in the
+materialized generated build tree, as well as the existing PR preview area.
+
+This lifecycle does not run SCons or build a domain site. Those responsibilities
+remain with the existing planner/runner and the consumer-owned builder.
+
 ### Repository variables
 
 The root `cad-ci.yml` may define an optional `variables` mapping.
@@ -404,10 +453,13 @@ current exact source commit, the library must:
 - load and validate an existing complete-scope manifest through the normal
   build-store manifest reader rather than parsing `build.json` in a tool;
 - use the stored exact `source_commit` as the incremental base;
-- require a full run for the first publication of a caller-named complete
+- require a full run when the generated build branch does not yet exist; this
+  is the explicit first-publication case for either stable `main` or a named
   scope;
-- fail if stable `main` has no durable baseline instead of silently treating
-  stable integration as a first run;
+- require a full run for the first publication of a caller-named complete
+  scope on an existing generated build branch;
+- fail if the generated build branch exists but stable `main` has no durable
+  baseline, instead of silently replacing potentially corrupt stable state;
 - prepare selected/current item membership through the existing planner and
   build-store complete-scope functions;
 - publish through the existing generated-branch publication API with source

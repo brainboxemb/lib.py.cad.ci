@@ -64,6 +64,56 @@ Configuration is validated once when the repository is loaded. The resulting
 immutable item model carries all execution-significant repository settings
 needed to construct the SCons graph.
 
+## Durable publication configuration
+
+Root configuration may carry one optional Pages reference:
+
+```text
+publication.pages
+  item   -> processed item id
+  output -> exact declared item output
+```
+
+The config loader validates the reference after all items/builders have been
+normalized. Executable site-generation logic remains in the referenced item's
+repository-owned builder.
+
+For compatibility, `load_repository(repo)` remains the item-only API used by
+existing planner/runner callers. New code that needs root metadata uses:
+
+```python
+repository = load_repository_config(repo)
+repository.items
+repository.pages
+```
+
+The existing `cad_ci.durable` module remains the only high-level complete-scope
+adapter. No second integration helper is introduced.
+
+```text
+generated build branch absent
+  -> first main/named scope = complete full run
+
+generated build branch present
+  -> resolve stored scope source commit
+  -> existing scope: update selected replacements + current membership
+  -> missing named scope: prepare complete named scope
+  -> missing main scope: fail closed
+
+published complete build scope
+  -> resolve configured Pages site
+  -> copy site to temporary publication tree
+  -> add generic source/build/scope provenance
+  -> publish stable root or named subtree
+```
+
+Stable Pages preserve names are derived from valid named complete scopes already
+present in the materialized generated build tree. Lane names therefore are not
+duplicated in root publication configuration or workflow inputs.
+
+Git fetch/push remains delegated to `cad_ci.git_publish`; GitHub workflow
+orchestration stays outside the library API.
+
 ## Repository variables
 
 A root `variables` mapping provides non-secret string values that every
@@ -456,11 +506,12 @@ Hosted workflow adapters need two operations around the SCons run:
 
 ```text
 before run:
-  materialize generated build branch
-  -> resolve complete scope
+  inspect/materialize generated build branch
+  -> branch absent: first main/named publication = full run
+  -> branch present: resolve complete scope
        -> existing scope: stored source_commit = incremental base
        -> first named scope: full run
-       -> missing main: error
+       -> missing main: fail closed
 
 after run:
   load repository config
@@ -475,7 +526,8 @@ does not introduce another storage format, selector or publication engine.
 
 `tool.cad.ci` may expose this behavior through workflow helper arguments and
 GitHub output files, but must not read durable `build.json` directly or
-choose between `update-main`, `update-named` and `prepare-named` itself.
+choose between `prepare-main`, `update-main`, `prepare-named` and
+`update-named` itself.
 
 ## Named complete publication scopes
 
@@ -501,13 +553,14 @@ together preserve each other's sibling directories.
 ### Pages
 
 A named Pages publication replaces exactly one validated top-level subtree.
-Stable-root publication cannot infer which arbitrary top-level directories are
-development previews because normal stable sites also own top-level
-directories. The caller therefore supplies the exact named-subtree keep set
-when replacing the stable root.
+
+For the durable-lane lifecycle, stable publication derives its named keep set
+from the valid named complete scopes already materialized from the generated
+build branch. This makes the build store the single durable scope inventory and
+avoids repeating lane names in consumer publication configuration.
+
+The lower-level `publish_pages(... preserve_subtrees=...)` API remains
+available for callers outside this durable-lane contract.
 
 PR previews remain under `previews/pr-<number>` and are always preserved by
 stable publication independently of the named keep set.
-
-This keeps publication mechanics generic while leaving lane naming and site
-layout policy with the consumer.
