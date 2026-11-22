@@ -9,21 +9,28 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
+import json
 import re
 import shutil
+import tempfile
 
 from .build_store import (
     BuildStoreError,
     MANIFEST,
     _complete_scope_contract,
     load_manifest,
+    prepare_main,
     prepare_named,
     update_main,
     update_named,
 )
-from .config import load_repository
+from .config import load_repository, load_repository_config
 from .git import changed_files
-from .git_publish import materialize_generated_branch, publish_build_scope
+from .git_publish import (
+    materialize_generated_branch,
+    publish_build_scope,
+    publish_pages,
+)
 from .planner import affected_items
 
 
@@ -122,12 +129,21 @@ def fetch_durable_scope_state(
             shutil.rmtree(generated_build)
         else:
             generated_build.unlink()
-    materialize_generated_branch(
+    materialized = materialize_generated_branch(
         source_repo=repo.resolve(),
         branch=branch,
         out=generated_build,
         remote=remote,
+        missing_ok=True,
     )
+    if materialized is None:
+        normalized_scope, _, _ = _scope_name(scope)
+        return DurableScopeState(
+            scope=normalized_scope,
+            base_sha=_exact_sha(source_sha, "source_sha"),
+            full_run=True,
+            exists=False,
+        )
     return resolve_durable_scope_state(
         generated_build=generated_build,
         scope=scope,
@@ -202,14 +218,22 @@ def publish_durable_scope(
     current_items = _processed_items(items)
 
     if manifest_scope == "main":
-        update_main(
-            main=generated_build / "main",
-            candidate_root=candidate_root,
-            out=prepared_scope,
-            items=selected_items,
-            current_items=current_items,
-            source_commit=source_sha,
-        )
+        if state.exists:
+            update_main(
+                main=generated_build / "main",
+                candidate_root=candidate_root,
+                out=prepared_scope,
+                items=selected_items,
+                current_items=current_items,
+                source_commit=source_sha,
+            )
+        else:
+            prepare_main(
+                candidate_root=candidate_root,
+                out=prepared_scope,
+                items=current_items,
+                source_commit=source_sha,
+            )
         publish_scope = "main"
         scope_name = None
     elif state.exists:
@@ -246,3 +270,111 @@ def publish_durable_scope(
         source_ref=source_ref,
         expected_source=source_sha,
     )
+
+
+def configured_pages_site(repo: Path, complete_scope: Path) -> Path | None:
+    """Return the configured Pages directory inside one complete scope."""
+
+    repository = load_repository_config(repo.resolve())
+    pages = repository.pages
+    if pages is None:
+        return None
+    item = repository.items[pages.item]
+    site = complete_scope.resolve() / item.path / pages.output
+    if not site.is_dir():
+        raise BuildStoreError(
+            "configured Pages output is not a directory in complete scope: "
+            f"{pages.item}:{pages.output}"
+        )
+    return site
+
+
+def _named_complete_scopes(generated_build: Path) -> tuple[str, ...]:
+    """Return validated named complete scopes present in one build tree."""
+
+    names: list[str] = []
+    root = generated_build.resolve()
+    if not root.is_dir():
+        return ()
+    for child in sorted(root.iterdir(), key=lambda path: path.name):
+        if not child.is_dir() or child.name in {"main", "pr"}:
+            continue
+        if not (child / MANIFEST).is_file():
+            continue
+        _, manifest_scope, manifest_name = _scope_name(child.name)
+        if manifest_scope != "named" or manifest_name is None:
+            continue
+        load_manifest(
+            child,
+            expected_scope="named",
+            expected_name=manifest_name,
+        )
+        names.append(child.name)
+    return tuple(names)
+
+
+def publish_durable_pages(
+    *,
+    repo: Path,
+    generated_build: Path,
+    prepared_scope: Path,
+    state: DurableScopeState,
+    source_sha: str,
+    source_ref: str,
+    build_commit: str,
+    remote: str = "origin",
+    retries: int = 3,
+) -> str | None:
+    """Publish configured stable/named Pages from one prepared complete scope.
+
+    The consumer-owned builder produces only site content. CAD-CI adds generic
+    publication provenance to a temporary copy so the durable build output is
+    not mutated after its build-branch commit has been published.
+    """
+
+    repo = repo.resolve()
+    source_sha = _exact_sha(source_sha, "source_sha")
+    build_commit = _exact_sha(build_commit, "build_commit")
+    source_ref = source_ref.strip()
+    if not source_ref:
+        raise BuildStoreError("source_ref is required for durable Pages publication")
+
+    site = configured_pages_site(repo, prepared_scope)
+    if site is None:
+        return None
+
+    scope, manifest_scope, _ = _scope_name(state.scope)
+    if scope != state.scope:
+        raise BuildStoreError("durable scope state is not normalized")
+
+    preserve = _named_complete_scopes(generated_build) if manifest_scope == "main" else ()
+    name = None if manifest_scope == "main" else scope
+
+    with tempfile.TemporaryDirectory(prefix="cad-ci-pages-") as tmp:
+        publish_site = Path(tmp) / "site"
+        shutil.copytree(site, publish_site)
+        (publish_site / "provenance.json").write_text(
+            json.dumps(
+                {
+                    "schema": 1,
+                    "source_commit": source_sha,
+                    "build_commit": build_commit,
+                    "build_scope": scope,
+                },
+                sort_keys=True,
+                indent=2,
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+        return publish_pages(
+            source_repo=repo,
+            site=publish_site,
+            name=name,
+            preserve_subtrees=preserve,
+            message=f"pages: {scope} {source_sha}",
+            remote=remote,
+            retries=retries,
+            source_ref=source_ref,
+            expected_source=source_sha,
+        )
