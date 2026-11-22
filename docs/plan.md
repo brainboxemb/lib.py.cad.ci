@@ -29,13 +29,20 @@ semantics.
 
 ## Current work
 
-No generic runtime implementation change is active. The repository is back in
-demand-driven mode.
+### #94 — config-owned durable lane integration
+
+**Now.** Add optional root Pages-source configuration and one high-level
+main/named complete-scope integration API. This is the generic owner-layer
+blocker for the action-free durable workflow in tool.cad.ci #137 and consumer
+migrations in CAD #288 / Forge #740.
+
+Keep GitHub Actions and domain site generators out of this library.
 
 ## Open issue assessment
 
 | Issue | Status | Next |
 | --- | --- | --- |
+| #94 Config-owned durable Pages/lane integration | **now** | Define config semantics, implement/test library composition, release. |
 | #89 Align historical changelog with shared meta template and guidance | **later / docs-only** | Apply shared changelog presentation without changing released behavior. |
 
 ## Non-goals
