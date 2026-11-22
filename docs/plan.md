@@ -1,50 +1,38 @@
 # Repository plan
 
-This file is the current source of truth for unfinished work in `lib.py.cad.ci`.
+Current source of truth for unfinished work in `lib.py.cad.ci` (2026-11-22).
 
-The repository owns generic CAD-CI planning/execution, durable build-store,
-Pages and generated-branch publication semantics. Tool/workflow repositories
-adapt these APIs; they do not reimplement them.
+This repository owns generic CAD-CI planning/execution, durable build-store and
+complete-scope state, Pages and generated-branch publication semantics.
+Tool/workflow repositories adapt these APIs; they do not reimplement them.
 
-## Current released baseline
+## Released and accepted baseline
 
-`lib.py.cad.ci 0.11.0` is released at exact commit
-`e621daf6e309bdd0e3f643a12007f1b66490696d`.
+- `lib.py.cad.ci 0.11.1` @
+  `fa6bf244381dde609a0b04de673d774911c52fea`.
+- Main CI/release run `45044386866` succeeded.
+- `tool.cad.ci 0.21.0` consumes this exact release at
+  `b1474f6be66dc0236f2a5c2555af07a100447255`.
+- External released-stack acceptance run `45045346481` succeeded.
 
-The currently accepted released stack remains unchanged while issue #87 is
-developed. Consumers must not pin this branch.
+Issue #87 moved durable complete-scope validation/state/publication composition
+out of `tool.cad.ci` and back into this library. The library is again the
+single source of truth for that generic state.
 
 ## Current work
 
-### #87 — durable complete-scope API
+No generic CAD-CI implementation is active. The repository is back in
+demand-driven mode.
 
-Repository-wide audit of `tool.cad.ci` found duplicated generic durable-scope
-logic in its workflow helper. The duplicate validator has already diverged from
-this library: this library reserves complete scope `pr`, while the tool copy
-did not.
-
-Work order:
-
-1. Define durable scope state/resolution requirements and design here.
-2. Implement `cad_ci.durable` by composing existing planner/build-store/Git
-   publication functions; no new storage or execution engine.
-3. Unit-test missing/existing main/named scopes, validation, provenance,
-   selection and publication delegation.
-4. Candidate library/tool pair has passed external tool.cad.ci.test acceptance.
-5. Publish `0.11.1` from the reviewed PR.
-6. Pin the exact released library in `tool.cad.ci`, rerun its CI/external
-   acceptance, then proceed to the tool release before any Forge/CAD repin.
-
-## Open issue assessment — 2026-11-22
+## Open issue assessment
 
 | Issue | Status | Next |
 | --- | --- | --- |
-| #87 Move durable complete-scope semantics out of tool.cad.ci | **now** | Library API + tests, then thin the tool. |
+| #89 Align historical changelog with shared meta template and guidance | **later / docs-only** | Apply shared changelog presentation without changing released behavior. |
 
 ## Non-goals
 
-- no changed-path planner beyond the existing selector;
-- no new scheduler or freshness engine;
-- no new durable manifest schema;
-- no GitHub-specific concepts in the library;
-- no domain-specific Forge/CAD behavior.
+- no second scheduler/freshness engine;
+- no consumer/domain-specific Forge/CAD concepts;
+- no GitHub-specific workflow orchestration;
+- no tool-owned duplicate implementation of library state.
