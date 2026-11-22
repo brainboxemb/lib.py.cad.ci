@@ -1036,3 +1036,26 @@ Before release:
 - thin tool changes contain no selection implementation;
 - external acceptance proves the exact released stack;
 - Forge #661 remains blocked until that acceptance is complete.
+
+
+## Shared builder configuration
+
+Given a root builder alias `shared: ci/builders/shared`, two independent items
+that each contain `builder: shared`, and one
+`ci/builders/shared/builder.yml`:
+
+1. repository loading resolves both items to the same builder directory without
+   requiring an inline `run` command in either item `ci.yml`;
+2. a Git change below `ci/builders/shared/**` selects both processed items;
+3. the builder directory appears in command-step source dependencies even when a
+   builder step declares narrower explicit item inputs;
+4. changing builder implementation makes a requested target dirty under SCons;
+5. a running builder command receives the item source directory through
+   `CAD_CI_ITEM_PATH` and the shared implementation directory through
+   `CAD_CI_BUILDER_PATH`;
+6. item configuration containing both `builder` and `steps`, or neither, is
+   invalid;
+7. legacy schema-1 item-local steps retain their prior execution semantics.
+
+No acceptance case depends on a built-in domain builder. Generic CAD-CI only
+resolves the repository-owned builder selected by the consumer.

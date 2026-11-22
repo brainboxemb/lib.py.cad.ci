@@ -1,14 +1,17 @@
 """Read and validate CI configuration owned by a consumer repository.
 
-The root cad-ci.yml owns repository-wide defaults and item discovery. Each
-item folder owns ci.yml with Git-selection paths, dependencies and ordered
-steps. Step inputs are build dependencies; item watch paths are only coarse
+The root cad-ci.yml owns repository-wide defaults, item discovery and optional
+repository-owned builder aliases. Each item folder owns ci.yml with identity,
+Git-selection paths, dependencies and either a declarative builder reference or
+legacy inline steps. Builder directories own executable step implementation.
+Step inputs are build dependencies; item watch paths are only coarse
 Git-selection inputs.
 """
 
 from __future__ import annotations
 
 from copy import deepcopy
+from dataclasses import replace
 from pathlib import Path, PurePosixPath
 import re
 from typing import Any
@@ -116,6 +119,36 @@ def _templates(value: object, path: Path) -> dict[str, dict[str, Any]]:
                 + ", ".join(invalid)
             )
         result[name] = deepcopy(template)
+    return result
+
+
+def _builders(value: object, path: Path) -> dict[str, Path]:
+    """Read repository-owned builder aliases as safe repository paths."""
+
+    if value is None:
+        return {}
+    if not isinstance(value, dict):
+        raise ConfigError(f"builders must be a mapping: {path}")
+
+    result: dict[str, Path] = {}
+    for name, raw_path in value.items():
+        if not isinstance(name, str) or not _ID.fullmatch(name):
+            raise ConfigError(f"invalid builder name: {path}: {name!r}")
+        if not isinstance(raw_path, str) or not raw_path:
+            raise ConfigError(f"builder path must be a string: {path}: {name}")
+
+        normalized = raw_path.replace("\\", "/").strip("/")
+        parsed = PurePosixPath(normalized)
+        if (
+            not normalized
+            or parsed.is_absolute()
+            or ".." in parsed.parts
+            or (parsed.parts and parsed.parts[0] in _GENERATED_ROOTS)
+        ):
+            raise ConfigError(
+                f"builder path must stay inside source paths: {path}: {raw_path}"
+            )
+        result[name] = Path(parsed.as_posix())
     return result
 
 
@@ -432,6 +465,74 @@ def _step(
         selection_context=selection_context,
     )
 
+
+def _configured_steps(
+    raw_steps: object,
+    path: Path,
+    default_timeout: int | None,
+    item_root: Path,
+    *,
+    builder_watch: str | None = None,
+) -> tuple[Step, ...]:
+    """Parse one executable step list from an item or shared builder file."""
+
+    if not isinstance(raw_steps, list) or not raw_steps:
+        raise ConfigError(f"steps must be a non-empty list: {path}")
+
+    parsed = tuple(
+        _step(value, path, default_timeout, item_root)
+        for value in raw_steps
+    )
+    if builder_watch is not None:
+        parsed = tuple(
+            replace(
+                step,
+                inputs=tuple(dict.fromkeys((*step.inputs, builder_watch))),
+            )
+            if step.run is not None and step.inputs is not None
+            else step
+            for step in parsed
+        )
+
+    step_ids = [step.id for step in parsed]
+    if len(step_ids) != len(set(step_ids)):
+        raise ConfigError(f"duplicate step id in {path}")
+    _check_output_ownership(parsed, path)
+    return parsed
+
+
+def _builder_steps(
+    repo: Path,
+    builder_name: str,
+    builder_path: Path,
+    default_timeout: int | None,
+    item_root: Path,
+) -> tuple[tuple[Step, ...], Path]:
+    """Load executable implementation from one repository-owned builder."""
+
+    config_path = repo / builder_path / "builder.yml"
+    data = _load_yaml(config_path)
+    if data.get("schema") != 1:
+        raise ConfigError(f"unsupported builder schema in {config_path}")
+
+    invalid = sorted(set(data) - {"schema", "description", "steps"})
+    if invalid:
+        raise ConfigError(
+            f"builder {builder_name} contains unsupported field(s): "
+            + ", ".join(invalid)
+        )
+
+    builder_watch = f"{builder_path.as_posix()}/**"
+    steps = _configured_steps(
+        data.get("steps"),
+        config_path,
+        default_timeout,
+        item_root,
+        builder_watch=builder_watch,
+    )
+    return steps, config_path
+
+
 def _check_output_ownership(steps: tuple[Step, ...], path: Path) -> None:
     """Reject duplicate or parent/child output ownership between steps."""
 
@@ -496,6 +597,7 @@ def load_repository(repo: Path) -> dict[str, Item]:
 
     variables = _variables(root.get("variables"), root_path)
     templates = _templates(root.get("templates"), root_path)
+    builders = _builders(root.get("builders"), root_path)
 
     defaults = root.get("defaults", {})
     if defaults is None:
@@ -594,18 +696,43 @@ def load_repository(repo: Path) -> dict[str, Item]:
             watch = (f"{rel.as_posix()}/**",)
 
         raw_steps = data.get("steps")
-        if not isinstance(raw_steps, list) or not raw_steps:
+        builder_name = data.get("builder")
+        has_builder = builder_name is not None
+        has_steps = raw_steps is not None
+        if has_builder == has_steps:
             raise ConfigError(
-                f"steps must be a non-empty list: {config_path}"
+                f"item requires exactly one of builder or steps: {config_path}"
             )
-        steps = tuple(
-            _step(value, config_path, default_timeout, rel)
-            for value in raw_steps
-        )
-        step_ids = [step.id for step in steps]
-        if len(step_ids) != len(set(step_ids)):
-            raise ConfigError(f"duplicate step id in {config_path}")
-        _check_output_ownership(steps, config_path)
+
+        builder_path: Path | None = None
+        if has_builder:
+            if (
+                not isinstance(builder_name, str)
+                or not _ID.fullmatch(builder_name)
+            ):
+                raise ConfigError(f"builder must be a valid name: {config_path}")
+            try:
+                builder_path = builders[builder_name]
+            except KeyError as exc:
+                raise ConfigError(
+                    f"unknown builder {builder_name!r}: {config_path}"
+                ) from exc
+            steps, _ = _builder_steps(
+                repo,
+                builder_name,
+                builder_path,
+                default_timeout,
+                rel,
+            )
+            builder_watch = f"{builder_path.as_posix()}/**"
+            watch = tuple(dict.fromkeys((*watch, builder_watch)))
+        else:
+            steps = _configured_steps(
+                raw_steps,
+                config_path,
+                default_timeout,
+                rel,
+            )
 
         items[item_id] = Item(
             id=item_id,
@@ -620,6 +747,8 @@ def load_repository(repo: Path) -> dict[str, Item]:
             steps=steps,
             config_path=config_path,
             config_data=data,
+            builder=builder_name if has_builder else None,
+            builder_path=builder_path,
         )
 
     for item in items.values():

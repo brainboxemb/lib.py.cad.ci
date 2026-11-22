@@ -145,6 +145,12 @@ def _command_environment(
             "CAD_CI_ITEM_PATH": str(
                 (ROOT / Path(spec["item_path"])).resolve()
             ),
+            "CAD_CI_BUILDER": str(spec.get("builder") or ""),
+            "CAD_CI_BUILDER_PATH": (
+                str((ROOT / Path(str(spec["builder_path"]))).resolve())
+                if spec.get("builder_path")
+                else ""
+            ),
             "CAD_CI_OUTPUT": str(_output_root(spec).resolve()),
             "CAD_CI_DEPENDENCIES_JSON": json.dumps(
                 dependency_context,

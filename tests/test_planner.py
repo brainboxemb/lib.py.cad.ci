@@ -194,5 +194,36 @@ class PlannerTests(unittest.TestCase):
             )
 
 
+    def test_shared_builder_change_selects_every_builder_user(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp)
+            (repo / "cad-ci.yml").write_text(
+                "schema: 1\n"
+                "items: [a, b]\n"
+                "builders: {shared: ci/builders/shared}\n",
+                encoding="utf-8",
+            )
+            builder = repo / "ci" / "builders" / "shared"
+            builder.mkdir(parents=True)
+            (builder / "builder.yml").write_text(
+                "schema: 1\n"
+                "steps: [{id: build, run: [python, -c, 'print(1)']}]\n",
+                encoding="utf-8",
+            )
+            for name in ("a", "b"):
+                folder = repo / name
+                folder.mkdir()
+                (folder / "ci.yml").write_text(
+                    f"id: {name}\nbuilder: shared\n",
+                    encoding="utf-8",
+                )
+
+            items = load_repository(repo)
+            selected = affected_items(
+                items,
+                ("ci/builders/shared/build.py",),
+            )
+            self.assertEqual(selected, {"a", "b"})
+
 if __name__ == "__main__":
     unittest.main()

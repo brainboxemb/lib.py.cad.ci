@@ -1377,5 +1377,70 @@ for name in ("consumer-a", "consumer-b"):
             )
 
 
+    def test_shared_builder_executes_from_builder_path_and_invalidates_on_change(self):
+        self.require_scons()
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            _write(
+                root / "cad-ci.yml",
+                "schema: 1\n"
+                "items: [item]\n"
+                "builders: {shared: ci/builders/shared}\n",
+            )
+            _write(
+                root / "ci" / "builders" / "shared" / "builder.yml",
+                "schema: 1\n"
+                "steps:\n"
+                "  - id: build\n"
+                "    run: 'python \"$CAD_CI_BUILDER_PATH/build.py\"'\n"
+                "    outputs: [result.txt]\n",
+            )
+            builder_script = root / "ci" / "builders" / "shared" / "build.py"
+            _write(
+                builder_script,
+                """import os
+from pathlib import Path
+builder = Path(os.environ["CAD_CI_BUILDER_PATH"])
+item = Path(os.environ["CAD_CI_ITEM_PATH"])
+out = Path(os.environ["CAD_CI_OUTPUT"])
+out.mkdir(parents=True, exist_ok=True)
+(out / "result.txt").write_text(f"{builder.name}:{item.name}:v1")
+""",
+            )
+            _write(
+                root / "item" / "ci.yml",
+                "id: item\n"
+                "builder: shared\n"
+                "watch:\n"
+                "  item: [input.txt]\n",
+            )
+            _write(root / "item" / "input.txt", "input\n")
+
+            first = self.run_selected(root, {"item"})
+            self.assertEqual(_outcomes(first), {"item:build": "BUILT"})
+            self.assertEqual(
+                (root / "build" / "item" / "result.txt").read_text(),
+                "shared:item:v1",
+            )
+
+            _write(
+                builder_script,
+                """import os
+from pathlib import Path
+builder = Path(os.environ["CAD_CI_BUILDER_PATH"])
+item = Path(os.environ["CAD_CI_ITEM_PATH"])
+out = Path(os.environ["CAD_CI_OUTPUT"])
+out.mkdir(parents=True, exist_ok=True)
+(out / "result.txt").write_text(f"{builder.name}:{item.name}:v2")
+""",
+            )
+
+            second = self.run_selected(root, {"item"})
+            self.assertEqual(_outcomes(second), {"item:build": "BUILT"})
+            self.assertEqual(
+                (root / "build" / "item" / "result.txt").read_text(),
+                "shared:item:v2",
+            )
+
 if __name__ == "__main__":
     unittest.main()

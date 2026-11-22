@@ -21,13 +21,23 @@ single source of truth for that generic state.
 
 ## Current work
 
-No generic CAD-CI implementation is active. The repository is back in
-demand-driven mode.
+Issue #91 is active: separate declarative item configuration from builder
+implementation while keeping the existing SCons execution engine.
+
+Current branch: `issue/91-builder-boundary`.
+
+Target:
+- root `cad-ci.yml` may map builder names to repository directories;
+- item `ci.yml` selects a builder and contains no command implementation;
+- `builder.yml` owns executable steps;
+- builder changes select/rebuild every using item;
+- legacy inline steps remain readable during migration.
 
 ## Open issue assessment
 
 | Issue | Status | Next |
 | --- | --- | --- |
+| #91 Separate declarative item configuration from builder implementation | **active** | Implement, unit-test, release, then expose through tool.cad.ci and external acceptance. |
 | #89 Align historical changelog with shared meta template and guidance | **later / docs-only** | Apply shared changelog presentation without changing released behavior. |
 
 ## Non-goals
