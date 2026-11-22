@@ -18,7 +18,7 @@ from typing import Any
 
 import yaml
 
-from .model import DependencyCopy, Item, Step
+from .model import DependencyCopy, Item, PagesPublication, RepositoryConfig, Step
 
 
 class ConfigError(ValueError):
@@ -150,6 +150,60 @@ def _builders(value: object, path: Path) -> dict[str, Path]:
             )
         result[name] = Path(parsed.as_posix())
     return result
+
+
+def _publication_pages(value: object, path: Path) -> PagesPublication | None:
+    """Read optional root publication.pages configuration."""
+
+    if value is None:
+        return None
+    if not isinstance(value, dict):
+        raise ConfigError(f"publication must be a mapping: {path}")
+
+    invalid = sorted(set(value) - {"pages"})
+    if invalid:
+        raise ConfigError(
+            "publication contains unsupported field(s): "
+            + ", ".join(invalid)
+        )
+
+    pages = value.get("pages")
+    if pages is None:
+        return None
+    if not isinstance(pages, dict):
+        raise ConfigError(f"publication.pages must be a mapping: {path}")
+
+    invalid_pages = sorted(set(pages) - {"item", "output"})
+    if invalid_pages:
+        raise ConfigError(
+            "publication.pages contains unsupported field(s): "
+            + ", ".join(invalid_pages)
+        )
+
+    item = pages.get("item")
+    if not isinstance(item, str) or not _ID.fullmatch(item):
+        raise ConfigError(
+            f"publication.pages.item must be a valid item id: {path}"
+        )
+
+    output = pages.get("output")
+    if not isinstance(output, str) or not output:
+        raise ConfigError(
+            f"publication.pages.output must be a non-empty string: {path}"
+        )
+    normalized = output.replace("\\", "/").strip("/")
+    parsed = PurePosixPath(normalized)
+    if (
+        not normalized
+        or parsed.is_absolute()
+        or ".." in parsed.parts
+        or (parsed.parts and parsed.parts[0] == ".cad-ci")
+    ):
+        raise ConfigError(
+            f"publication.pages.output must be a safe item output: {path}"
+        )
+
+    return PagesPublication(item=item, output=parsed.as_posix())
 
 
 def _effective_item_config(
@@ -586,8 +640,8 @@ def _check_nested_item_output_roots(items: dict[str, Item]) -> None:
                         )
 
 
-def load_repository(repo: Path) -> dict[str, Item]:
-    """Discover and validate every configured CI item in repo."""
+def load_repository_config(repo: Path) -> RepositoryConfig:
+    """Discover and validate repository-wide configuration and CI items."""
 
     repo = repo.resolve()
     root_path = repo / "cad-ci.yml"
@@ -598,6 +652,7 @@ def load_repository(repo: Path) -> dict[str, Item]:
     variables = _variables(root.get("variables"), root_path)
     templates = _templates(root.get("templates"), root_path)
     builders = _builders(root.get("builders"), root_path)
+    pages = _publication_pages(root.get("publication"), root_path)
 
     defaults = root.get("defaults", {})
     if defaults is None:
@@ -804,7 +859,36 @@ def load_repository(repo: Path) -> dict[str, Item]:
 
     _check_nested_item_output_roots(items)
     _check_cycles(items)
-    return items
+
+    if pages is not None:
+        try:
+            pages_item = items[pages.item]
+        except KeyError as exc:
+            raise ConfigError(
+                f"publication.pages references unknown item: {pages.item}"
+            ) from exc
+        if not pages_item.process:
+            raise ConfigError(
+                f"publication.pages item is not processed: {pages.item}"
+            )
+        declared_outputs = {
+            output
+            for step in pages_item.steps
+            for output in step.outputs
+        }
+        if pages.output not in declared_outputs:
+            raise ConfigError(
+                "publication.pages.output is not declared by item "
+                f"{pages.item}: {pages.output}"
+            )
+
+    return RepositoryConfig(items=items, pages=pages)
+
+
+def load_repository(repo: Path) -> dict[str, Item]:
+    """Backward-compatible item-only repository loader."""
+
+    return load_repository_config(repo).items
 
 
 def _check_cycles(items: dict[str, Item]) -> None:
