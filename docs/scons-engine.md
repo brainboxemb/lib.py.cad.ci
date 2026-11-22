@@ -818,3 +818,119 @@ the previous whole-graph behavior.
 
 No persistent source index is added. The inventory is per invocation and never
 participates in rebuild decisions outside the normal active target signatures.
+
+## 23. Dependency-output copy target
+
+### Configuration model
+
+`Step` has two mutually exclusive action forms:
+
+- `run: str | tuple[str, ...]` for the existing external command action;
+- `copy: DependencyCopy` for an engine-owned dependency-output copy action.
+
+`DependencyCopy` contains:
+
+```text
+dependency: direct item id
+source: normalized source-root template
+```
+
+The source template accepts only the literal `{item_path}` token. Expansion
+happens while target specs are created, after item paths and dependencies are
+fully known. Unknown braces/tokens are configuration errors.
+
+For a copy step, repository source inputs are empty. Its SCons signature
+contains:
+
+- engine schema;
+- item/step identity;
+- action type `copy`;
+- expanded dependency id/source root;
+- declared/cumulative outputs;
+- direct `needs`;
+- reuse policy and repository variables only where they remain execution
+  significant.
+
+The dependency final target is still the SCons prerequisite, so dependency
+bundle changes invalidate the copy target naturally.
+
+### Bundle projection
+
+A copy action does **not** call the normal command-step
+`_dependency_context()`, because that would materialize the dependency's
+complete final bundle into a target-private snapshot.
+
+Instead:
+
+1. resolve the configured direct dependency's final target bundle;
+2. validate its bundle manifest;
+3. validate the expanded source root against the dependency's declared output
+   ownership;
+4. for each consumer output, select only archive members at
+   `<source>/<output>` and descendants;
+5. remap those members to consumer-relative `<output>`;
+6. write one deterministic consumer target bundle with a normal bundle manifest;
+7. leave public `build/<consumer>/` materialization to the existing post-run
+   materialization phase.
+
+The implementation may use a target-private temporary directory for the
+selected members before `write_bundle()`; it must never extract the complete
+dependency output for a copy action.
+
+Files/directories, empty directories, modes, link rejection and deterministic
+bundle metadata use the existing bundle rules. Missing selected output,
+unexpected links, path traversal, source outside declared dependency output or
+bundle/manifest mismatch fail the target as an output/materialization error.
+
+### Parallelism
+
+Multiple copy targets may read the same immutable dependency bundle
+concurrently. They never share a writable dependency snapshot. Their consumer
+target bundles and temporary selected-member roots are target-private.
+
+Normal command targets continue using the existing target-private dependency
+snapshot design. #79 does not weaken that jobs>1 isolation contract.
+
+### Evidence/schema
+
+Increment `ENGINE_SCHEMA`: copy target execution and signatures are new engine
+semantics, so old target/cache entries must not be reused.
+
+Increment the private report schema and public step-evidence schema to add
+`action_type`:
+
+```text
+command
+copy
+```
+
+For an executed copy action:
+
+- outcome is `BUILT`;
+- `action_executed=true`;
+- `action_type=copy`;
+- start/finish/duration describe the engine-owned projection action;
+- `exit_code=null`;
+- `timeout_seconds=null`.
+
+For CURRENT/CACHE_RESTORED rows the action timestamps remain null while
+`action_type` still describes the configured target.
+
+Complete-item evidence remains schema-compatible because its fields do not
+change.
+
+### Operator wording
+
+Console output is literal:
+
+```text
+CAD CI copy: <item>:<step>
+```
+
+Command targets keep:
+
+```text
+CAD CI run: <item>:<step>
+```
+
+Console text remains diagnostic only.
