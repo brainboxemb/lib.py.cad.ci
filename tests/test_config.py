@@ -2,7 +2,7 @@ from pathlib import Path
 import tempfile
 import unittest
 
-from cad_ci.config import ConfigError, load_repository
+from cad_ci.config import ConfigError, load_repository, load_repository_config
 
 
 class ConfigTests(unittest.TestCase):
@@ -1021,6 +1021,94 @@ class ConfigTests(unittest.TestCase):
                 "builder path must stay inside source paths",
             ):
                 load_repository(repo)
+
+    def test_root_publication_pages_resolves_declared_processed_output(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp)
+            (repo / "cad-ci.yml").write_text(
+                "schema: 1\n"
+                "items: [site]\n"
+                "publication:\n"
+                "  pages: {item: site, output: site}\n",
+                encoding="utf-8",
+            )
+            folder = repo / "site"
+            folder.mkdir()
+            (folder / "ci.yml").write_text(
+                "id: site\n"
+                "steps:\n"
+                "  - id: build\n"
+                "    run: [python, -c, 'print(1)']\n"
+                "    outputs: [site]\n",
+                encoding="utf-8",
+            )
+
+            repository = load_repository_config(repo)
+            self.assertEqual(repository.pages.item, "site")
+            self.assertEqual(repository.pages.output, "site")
+            self.assertEqual(set(repository.items), {"site"})
+            self.assertEqual(set(load_repository(repo)), {"site"})
+
+    def test_root_publication_pages_rejects_invalid_item_or_output(self):
+        cases = (
+            (
+                "publication:\n  pages: {item: missing, output: site}\n",
+                "references unknown item",
+            ),
+            (
+                "publication:\n  pages: {item: site, output: other}\n",
+                "output is not declared",
+            ),
+            (
+                "publication:\n  pages: {item: site, output: ../escape}\n",
+                "must be a safe item output",
+            ),
+        )
+        for publication, expected in cases:
+            with self.subTest(expected=expected):
+                with tempfile.TemporaryDirectory() as tmp:
+                    repo = Path(tmp)
+                    (repo / "cad-ci.yml").write_text(
+                        "schema: 1\nitems: [site]\n" + publication,
+                        encoding="utf-8",
+                    )
+                    folder = repo / "site"
+                    folder.mkdir()
+                    (folder / "ci.yml").write_text(
+                        "id: site\n"
+                        "steps:\n"
+                        "  - id: build\n"
+                        "    run: [python, -c, 'print(1)']\n"
+                        "    outputs: [site]\n",
+                        encoding="utf-8",
+                    )
+                    with self.assertRaisesRegex(ConfigError, expected):
+                        load_repository_config(repo)
+
+    def test_root_publication_pages_rejects_non_processed_item(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp)
+            (repo / "cad-ci.yml").write_text(
+                "schema: 1\n"
+                "items: [site]\n"
+                "publication:\n"
+                "  pages: {item: site, output: site}\n",
+                encoding="utf-8",
+            )
+            folder = repo / "site"
+            folder.mkdir()
+            (folder / "ci.yml").write_text(
+                "id: site\n"
+                "process: false\n"
+                "steps:\n"
+                "  - id: build\n"
+                "    run: [python, -c, 'print(1)']\n"
+                "    outputs: [site]\n",
+                encoding="utf-8",
+            )
+            with self.assertRaisesRegex(ConfigError, "item is not processed"):
+                load_repository_config(repo)
+
 
 if __name__ == "__main__":
     unittest.main()
