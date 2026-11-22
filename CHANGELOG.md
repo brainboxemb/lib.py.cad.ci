@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.11.1
+
+- move generic durable complete-scope state resolution from tool.cad.ci into
+  `cad_ci.durable`, using the existing build-store scope validator and manifest
+  reader as the single source of truth;
+- resolve first named-scope full runs and existing-scope incremental bases from
+  durable manifest provenance while failing closed for a missing stable main;
+- compose existing planner, complete-scope preparation/update and generated-
+  branch publication APIs for durable publication without a second engine or
+  schema;
+- add regression coverage for reserved `pr`, corrupt provenance, main/named
+  updates and publication delegation.
+
 ## 0.11.0
 
 - add opt-in `selection_context: direct_dependents` for command steps so shared
