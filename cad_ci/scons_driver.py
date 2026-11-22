@@ -151,6 +151,10 @@ def _command_environment(
                 sort_keys=True,
                 separators=(",", ":"),
             ),
+            "CAD_CI_ACTIVE_DEPENDENTS_JSON": json.dumps(
+                list(spec.get("active_dependents", [])),
+                separators=(",", ":"),
+            ),
         }
     )
     return env

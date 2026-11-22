@@ -27,10 +27,10 @@ from .scons_bundle import (
 from .timing import utc_now
 
 
-ENGINE_SCHEMA = 3
+ENGINE_SCHEMA = 4
 MANIFEST_SCHEMA = 1
 REPORT_SCHEMA = "cad-ci.scons-results"
-REPORT_SCHEMA_VERSION = 5
+REPORT_SCHEMA_VERSION = 6
 OUTCOMES = ("BUILT", "CACHE_RESTORED", "CURRENT", "ERROR")
 
 CACHE_ROOT = Path(".cache/cad-ci/scons/cache")
@@ -278,6 +278,25 @@ def _active_keys(
     return tuple(key for key in dependencies if key in active)
 
 
+def _active_direct_dependents(
+    items: dict[str, Item],
+    item_id: str,
+    active_keys: set[str],
+) -> tuple[str, ...]:
+    """Return active direct dependent items in repository config order."""
+
+    result = []
+    for dependent in items.values():
+        if not dependent.process or item_id not in dependent.needs:
+            continue
+        if any(
+            step_key(dependent, configured_step) in active_keys
+            for configured_step in dependent.steps
+        ):
+            result.append(dependent.id)
+    return tuple(result)
+
+
 def target_specs(
     repo: Path,
     items: dict[str, Item],
@@ -321,6 +340,16 @@ def target_specs(
                 item,
                 configured_step,
                 candidates,
+            )
+
+            active_dependents = (
+                _active_direct_dependents(
+                    items,
+                    item.id,
+                    active_keys,
+                )
+                if configured_step.selection_context == "direct_dependents"
+                else ()
             )
 
             if index == 0:
@@ -377,6 +406,8 @@ def target_specs(
                 "variables": dict(item.variables),
                 "resolved_inputs": list(resolved_inputs),
                 "needs": list(item.needs),
+                "selection_context": configured_step.selection_context,
+                "active_dependents": list(active_dependents),
             }
 
             bundle_rel = _bundle_path(item, configured_step)
@@ -397,6 +428,8 @@ def target_specs(
                     "reuse": item.reuse,
                     "variables": dict(item.variables),
                     "sources": list(resolved_inputs),
+                    "selection_context": configured_step.selection_context,
+                    "active_dependents": list(active_dependents),
                     "dependencies": dependencies,
                     "materialize_before": materialize_before,
                     "direct_dependencies": direct_dependencies,
@@ -656,6 +689,9 @@ def write_report(
                 "bundle_sha256": bundle_digest,
                 "outputs": output_manifest,
                 "sources": list(spec["sources"]),
+                "active_dependents": list(
+                    spec.get("active_dependents", [])
+                ),
             }
         )
 
@@ -725,7 +761,7 @@ def write_public_evidence(
         _write_json(
             evidence,
             {
-                "schema": 4,
+                "schema": 5,
                 "engine": "scons",
                 "engine_schema": ENGINE_SCHEMA,
                 "item": row["item"],
@@ -746,6 +782,7 @@ def write_public_evidence(
                 "target_spec_digest": row["target_spec_digest"],
                 "bundle_sha256": row["bundle_sha256"],
                 "outputs": row["outputs"],
+                "active_dependents": row["active_dependents"],
             },
         )
 

@@ -936,3 +936,89 @@ CAD CI run: <item>:<step>
 ```
 
 Console text remains diagnostic only.
+
+
+## 24. Active direct-dependent context in SCons targets
+
+### Configuration model
+
+`Step` gains:
+
+```text
+selection_context: "none" | "direct_dependents"
+```
+
+The default is `none`. Config validation rejects the field on `copy:`
+steps.
+
+### Derivation
+
+The engine already computes the exact active target closure:
+
+```text
+requested keys
+  -> _active_keys(target dependency graph)
+  -> active target-key set
+```
+
+For each command step with `selection_context=direct_dependents`, derive the
+context without re-running Git selection:
+
+1. find configured items whose `needs` contains the current item id;
+2. retain a dependent when any configured target key of that dependent is in
+   the active target-key set;
+3. preserve repository item order;
+4. store only the dependent item ids.
+
+This is intentionally **direct** dependents, not an arbitrary reverse transitive
+closure. Shared producers have an explicit `needs` relationship to their
+consumer items, which keeps the contract inspectable and avoids unrelated
+downstream activation leaking into the signature.
+
+### Target specification and freshness
+
+The derived list is written into:
+
+- target spec field `active_dependents`;
+- target signature field `active_dependents`;
+- command environment as compact sorted JSON;
+- private/public step evidence.
+
+Because SCons depends on the target signature Value node, changing
+`["item-a"]` to `["item-b"]` or to the full list invalidates the target even
+when source files are identical.
+
+Bump `ENGINE_SCHEMA`, private report schema and public step-evidence schema
+because target signatures and evidence change.
+
+### Command environment
+
+`scons_driver._command_environment()` sets:
+
+```text
+CAD_CI_ACTIVE_DEPENDENTS_JSON
+```
+
+from the target spec after repository variables have been applied, just like
+the other reserved CAD-CI environment values.
+
+For non-opted-in command steps the value is the empty JSON list `[]`. This
+keeps consumer code simple while only opted-in targets include selection
+context in their signature.
+
+### Full/no-op behavior
+
+Full run naturally activates every processed target, therefore every processed
+direct dependent is present.
+
+A no-target run returns the existing empty report before manifest/SCons
+execution; no selection-aware target runs.
+
+### Cache and parallelism
+
+The active-dependent list is immutable manifest data. Parallel targets only read
+their own spec, so no mutable global selection state is shared.
+
+CacheDir keys remain correct because the target signature contains the exact
+list. A cache entry built for one dependent subset cannot satisfy another
+subset signature.

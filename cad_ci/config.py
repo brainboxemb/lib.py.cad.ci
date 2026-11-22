@@ -361,6 +361,13 @@ def _step(
         for output in _strings(data.get("outputs"), "outputs", path)
     )
 
+    selection_context = data.get("selection_context", "none")
+    if selection_context not in ("none", "direct_dependents"):
+        raise ConfigError(
+            "step selection_context must be none or direct_dependents: "
+            f"{path}:{step_id}"
+        )
+
     if has_copy:
         if not outputs:
             raise ConfigError(
@@ -373,6 +380,10 @@ def _step(
         if "timeout_seconds" in data:
             raise ConfigError(
                 f"copy step does not accept timeout_seconds: {path}:{step_id}"
+            )
+        if selection_context != "none":
+            raise ConfigError(
+                f"copy step does not accept selection_context: {path}:{step_id}"
             )
         return Step(
             id=step_id,
@@ -418,6 +429,7 @@ def _step(
         outputs=outputs,
         timeout_seconds=timeout_seconds,
         inputs=inputs,
+        selection_context=selection_context,
     )
 
 def _check_output_ownership(steps: tuple[Step, ...], path: Path) -> None:

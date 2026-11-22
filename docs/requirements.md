@@ -898,3 +898,47 @@ like current/cache-restored command targets.
 
 This capability is generic output ownership. It must not know consumer domain
 concepts such as models, references, CAD engines or qualification cases.
+
+
+## 24. Active direct-dependent command context
+
+A command step may opt in to the already-computed CAD-CI active graph:
+
+```yaml
+steps:
+  - id: shared-batch
+    selection_context: direct_dependents
+    run: [python, batch.py]
+    outputs: [items]
+```
+
+`selection_context` is optional. Supported values are:
+
+- omitted / `none`: existing behavior;
+- `direct_dependents`: expose the active direct dependent item ids.
+
+For `direct_dependents`:
+
+- CAD-CI computes the set from the same selected SCons target closure already
+  used for execution; no Git diff is re-evaluated;
+- a dependent item is included when that item has this item's id in `needs`
+  and at least one of the dependent item's configured step targets is active;
+- ids are sorted in repository configuration order and unique;
+- the command receives
+  `CAD_CI_ACTIVE_DEPENDENTS_JSON='["item-a","item-b"]'`;
+- the exact ordered list is part of the command target signature and public
+  step evidence;
+- changing only the active-dependent set makes the target non-current even when
+  repository source inputs are otherwise unchanged;
+- an explicit full run exposes every processed direct dependent that belongs to
+  the active full graph;
+- a no-target/no-op run still executes no target and no command;
+- the context is read-only execution metadata; CAD-CI does not interpret how a
+  consumer command maps ids to domain work;
+- `copy:` steps do not accept `selection_context` because they launch no
+  consumer command and their source is already explicit;
+- environment ownership remains authoritative: caller/repository variables may
+  not override `CAD_CI_ACTIVE_DEPENDENTS_JSON`.
+
+The capability must preserve jobs>1 isolation, CacheDir correctness, CURRENT
+classification, deterministic evidence and normal dependency ordering.

@@ -968,3 +968,71 @@ Before releasing #79:
   using the exact released tool/library pair;
 - only then may Forge replace projection-only materializer commands and remeasure
   its full-run tail.
+
+
+## Case 32 - active direct-dependent batch context
+
+Repository:
+
+```text
+batch/
+consumer-a/ -> needs: [batch]
+consumer-b/ -> needs: [batch]
+unrelated/
+```
+
+The batch command has
+`selection_context: direct_dependents` and writes the received JSON list into
+its declared output.
+
+Required sequences:
+
+1. select only consumer-a:
+   - active closure contains batch + consumer-a path;
+   - batch command receives exactly `["consumer-a"]`;
+   - batch target is BUILT;
+   - consumer-b is not active.
+
+2. repeat identical consumer-a selection:
+   - batch is CURRENT (or CACHE_RESTORED in a fresh equivalent workspace);
+   - stored evidence reports the same active-dependent list.
+
+3. select only consumer-b with unchanged repository source:
+   - batch must rebuild because its target signature changes;
+   - command receives exactly `["consumer-b"]`;
+   - it must not reuse the consumer-a partial batch result as CURRENT.
+
+4. select consumer-a and consumer-b together with jobs=2:
+   - batch runs once;
+   - command receives both ids in repository order;
+   - both consumers run after the batch;
+   - no race/shared mutable selection file exists.
+
+5. explicit full run:
+   - batch receives both processed direct dependents;
+   - unrelated item is absent unless it directly needs batch.
+
+6. no-target/no-op run:
+   - target count remains zero;
+   - batch command does not start.
+
+7. configuration:
+   - omitted selection_context keeps existing behavior;
+   - unknown values fail before SCons;
+   - `copy:` + selection_context fails before SCons.
+
+8. evidence/cache:
+   - public step evidence contains `active_dependents`;
+   - engine/report/evidence schema versions reflect the new contract;
+   - fresh CacheDir cannot restore a batch built for a different dependent set.
+
+## Release gate addition for #83
+
+Before release:
+
+- Case 32 exists in library conformance tests;
+- existing selective-startup, dependency-copy, jobs>1 and cache cases remain
+  green;
+- thin tool changes contain no selection implementation;
+- external acceptance proves the exact released stack;
+- Forge #661 remains blocked until that acceptance is complete.
