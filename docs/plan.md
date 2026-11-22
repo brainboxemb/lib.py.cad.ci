@@ -24,6 +24,9 @@ publication support, and dependency-output `copy:`.
 
 ### #83 — signature-safe active direct-dependent context
 
+`lib.py.cad.ci 0.11.0` is released at exact commit
+`e621daf6e309bdd0e3f643a12007f1b66490696d`. Library implementation and release are complete; final ecosystem acceptance now runs in `tool.cad.ci.test` #77 / PR #78 through released `tool.cad.ci 0.18.1`.
+
 Status: **now**.
 
 Consumer evidence from Forge #661:
@@ -71,7 +74,7 @@ Execution order:
 
 | Issue | Status | Assessment |
 | --- | --- | --- |
-| #83 Expose signature-safe active consumer selection to shared batch actions | **now** | Generic owner capability required by measured Forge #661 evidence. |
+| #83 Expose signature-safe active consumer selection to shared batch actions | **blocked** | Library 0.11.0 is released at `e621daf6…`; close after released tool 0.18.1 passes `tool.cad.ci.test` #77 / PR #78. |
 
 ## Non-goals
 
