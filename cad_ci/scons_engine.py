@@ -27,10 +27,10 @@ from .scons_bundle import (
 from .timing import utc_now
 
 
-ENGINE_SCHEMA = 2
+ENGINE_SCHEMA = 3
 MANIFEST_SCHEMA = 1
 REPORT_SCHEMA = "cad-ci.scons-results"
-REPORT_SCHEMA_VERSION = 4
+REPORT_SCHEMA_VERSION = 5
 OUTCOMES = ("BUILT", "CACHE_RESTORED", "CURRENT", "ERROR")
 
 CACHE_ROOT = Path(".cache/cad-ci/scons/cache")
@@ -342,13 +342,23 @@ def target_specs(
 
             materialize_before = list(dict.fromkeys(materialize_before))
 
-            command: str | list[str]
-            shell = isinstance(configured_step.run, str)
-            command = (
-                str(configured_step.run)
-                if shell
-                else list(configured_step.run)
-            )
+            if configured_step.copy is not None:
+                action_type = "copy"
+                command: str | list[str] | None = None
+                shell = False
+                copy_spec: dict[str, str] | None = {
+                    "dependency": configured_step.copy.dependency,
+                    "source": configured_step.copy.source,
+                }
+            else:
+                action_type = "command"
+                shell = isinstance(configured_step.run, str)
+                command = (
+                    str(configured_step.run)
+                    if shell
+                    else list(configured_step.run or ())
+                )
+                copy_spec = None
 
             signature = {
                 "schema": 1,
@@ -356,7 +366,9 @@ def target_specs(
                 "item_id": item.id,
                 "item_path": item.path.as_posix(),
                 "step_id": configured_step.id,
+                "action_type": action_type,
                 "run": command,
+                "copy": copy_spec,
                 "shell": shell,
                 "outputs": list(configured_step.outputs),
                 "bundle_outputs": list(cumulative_outputs),
@@ -375,7 +387,9 @@ def target_specs(
                     "item_id": item.id,
                     "item_path": item.path.as_posix(),
                     "step_id": configured_step.id,
+                    "action_type": action_type,
                     "run": command,
+                    "copy": copy_spec,
                     "shell": shell,
                     "outputs": list(configured_step.outputs),
                     "bundle_outputs": list(cumulative_outputs),
@@ -620,6 +634,7 @@ def write_report(
                     if action is None
                     else bool(action.get("action_executed", True))
                 ),
+                "action_type": spec.get("action_type", "command"),
                 "action_status": (
                     None if action is None else action.get("status")
                 ),
@@ -710,7 +725,7 @@ def write_public_evidence(
         _write_json(
             evidence,
             {
-                "schema": 3,
+                "schema": 4,
                 "engine": "scons",
                 "engine_schema": ENGINE_SCHEMA,
                 "item": row["item"],
@@ -720,6 +735,7 @@ def write_public_evidence(
                 "output_state": row["output_state"],
                 "error": row["error"],
                 "action_executed": row["action_executed"],
+                "action_type": row["action_type"],
                 "run_started_at": report["started_at"],
                 "run_finished_at": report["finished_at"],
                 "started_at": row["started_at"],
