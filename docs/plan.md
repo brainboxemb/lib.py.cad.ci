@@ -7,15 +7,22 @@ issues contain detail and history.
 
 ## Current released state
 
-`lib.py.cad.ci 0.9.3` is released at exact commit
-`74486c441f1f2b170ff3dc06e0edcaf662fbec6b`.
+`lib.py.cad.ci 0.10.0` is released at exact commit
+`397fb04005b46de8d433cb18c091b1e73714b877`.
 
-The currently accepted consumer chain is:
+Release evidence:
 
-- `tool.cad.ci 0.17.0` with explicit bounded `jobs` support;
-- Forge v0.11.0 and post-release main/dev lanes on jobs=2;
-- the external `tool.cad.ci.test` released-stack acceptance used for each
-  owner-first promotion.
+- main test/release run `45006286548` — success;
+- Git tag/GitHub Release `v0.10.0` resolve to the exact released commit.
+
+The previously accepted consumer chain still uses:
+
+- `tool.cad.ci 0.17.0` / lib 0.9.3;
+- Forge v0.11.0 and post-release lanes on that accepted stack.
+
+The 0.10.0 capability is intentionally **not consumer-accepted yet**. Tool issue
+#91 is repinning the released library, after which `tool.cad.ci.test` must
+prove the exact released pair before Forge #261 may adopt `copy:`.
 
 Closed #71 delivered active-closure-first selective startup. Bounded parallel
 execution is also released. Those optimizations remain the baseline and must not
@@ -23,49 +30,19 @@ be bypassed by a second scheduler or freshness engine.
 
 ## Current work
 
-### #79 — dependency-output copy without consumer copy processes
+### #79 — effectively complete, downstream acceptance pending
 
-The implementation and library conformance suite are green. The branch now
-prepares **lib.py.cad.ci 0.10.0**; merge is gated on the final release-prepared
-PR run, after which the repository's normal main release job must publish
-`v0.10.0` from that exact tested main commit.
+The generic library implementation is complete and released as 0.10.0.
 
-Consumer: `lib.py.solidcraft.forge` #261.
+#79 remains open only as the owner-chain tracking point until:
 
-Forge full-run evidence on the accepted jobs=2 stack shows that the two heavy
-shared verification batches finish in roughly 60-81 seconds, while SCons still
-has a 107-176 second tail before all 227 targets complete.
+1. tool.cad.ci #91 pins/releases the exact library commit;
+2. tool.cad.ci.test accepts the exact released tool/library stack;
+3. Forge #261 records that accepted dependency before consumer migration.
 
-The current consumer shape explains a plausible generic cause:
-
-1. one shared dependency item produces a complete batch result;
-2. many child items depend on that batch;
-3. every child step receives a target-private snapshot of the dependency's
-   **complete final bundle**;
-4. a tiny consumer Python command copies only one child subtree into its own
-   output;
-5. CAD-CI then bundles that copied child output again.
-
-For Forge references this pattern repeats across roughly four reference items
-per model. Repeated full dependency-snapshot materialization is therefore a
-stronger candidate bottleneck than Python interpreter startup alone.
-
-#79 is the only active generic implementation.
-
-Required owner-first sequence:
-
-1. define a literal declarative dependency-output `copy` step in requirements;
-2. define safe source-path/token rules and direct-bundle projection semantics in
-   the SCons design;
-3. add acceptance sequences before engine implementation;
-4. implement the library without materializing the complete dependency output
-   for a copy step;
-5. prove cold/current/invalidation/cache/parallel/error behavior;
-6. release the library;
-7. repin/release the thin tool;
-8. prove the exact released pair in `tool.cad.ci.test`;
-9. only then let Forge replace projection-only materializer commands and
-   remeasure #261.
+No additional library implementation is currently justified. If external
+acceptance exposes a generic defect, reopen active implementation here and
+update requirements/design/acceptance before code.
 
 ## Intended behavioral boundary for #79
 
@@ -103,8 +80,8 @@ before implementation.
 
 ## Next demand-driven priorities
 
-After #79 is released and externally accepted, this repository returns to
-demand-driven mode. New generic work must again start from consumer evidence and
+The library is in downstream-acceptance mode. After #79 is externally accepted,
+this repository returns to demand-driven mode. New generic work must again start from consumer evidence and
 a new issue.
 
 If #79 does not materially reduce the measured Forge tail, return to the
