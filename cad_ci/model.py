@@ -26,7 +26,8 @@ class Step:
     `outputs` lists files/directories owned below the item's build directory.
     `timeout_seconds` applies only to command steps. `inputs` is an optional
     repository-relative pattern set for command steps; None means inherit the
-    owning item's `watch` patterns.
+    owning item's `watch` patterns. `selection_context` optionally exposes
+    already-computed active-graph context to command steps.
     """
 
     id: str
@@ -35,6 +36,7 @@ class Step:
     outputs: tuple[str, ...] = ()
     timeout_seconds: int | None = None
     inputs: tuple[str, ...] | None = None
+    selection_context: str = "none"
 
 
 @dataclass(frozen=True)
