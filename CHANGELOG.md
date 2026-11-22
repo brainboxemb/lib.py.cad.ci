@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.11.0
+
+- add opt-in `selection_context: direct_dependents` for command steps so shared
+  producers can consume the already-selected direct dependent item set without
+  re-running Git/path selection;
+- expose that deterministic set as `CAD_CI_ACTIVE_DEPENDENTS_JSON` and include
+  it in target signatures, cache identity and structured step evidence;
+- preserve no-op, full-run, jobs>1, CURRENT and CacheDir correctness, including
+  isolation between different active-dependent sets;
+- reject selection context on `copy:` actions and keep the capability
+  domain-neutral with SCons as the sole scheduling/freshness engine.
+
 ## 0.10.0
 
 - add a generic engine-owned `copy:` step action for projecting declared
