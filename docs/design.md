@@ -64,6 +64,48 @@ Configuration is validated once when the repository is loaded. The resulting
 immutable item model carries all execution-significant repository settings
 needed to construct the SCons graph.
 
+## Durable publication configuration
+
+Root configuration may carry one optional Pages reference:
+
+```text
+publication.pages
+  item   -> processed item id
+  output -> exact declared item output
+```
+
+The config loader validates the reference after all items/builders have been
+normalized. Executable site-generation logic remains in the referenced item's
+repository-owned builder.
+
+For compatibility, `load_repository(repo)` remains the item-only API used by
+existing planner/runner callers. New code that needs root metadata uses:
+
+```python
+repository = load_repository_config(repo)
+repository.items
+repository.pages
+```
+
+The durable integration helper receives already-selected items and the complete
+current processed item set from the existing planner boundary. It composes only
+existing build-store operations:
+
+```text
+previous scope absent
+  -> prepare_main / prepare_named using all current items
+
+previous scope present
+  -> update_main / update_named using selected replacements
+     + complete current membership
+
+resulting complete scope
+  -> resolve configured Pages site path
+```
+
+This helper is local filesystem/state composition. Git fetch/push and GitHub
+workflow orchestration stay outside the library API.
+
 ## Repository variables
 
 A root `variables` mapping provides non-secret string values that every
