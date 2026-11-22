@@ -6,43 +6,30 @@ This repository owns generic CAD-CI planning/execution, durable build-store and
 complete-scope state, Pages and generated-branch publication semantics.
 Tool/workflow repositories adapt these APIs; they do not reimplement them.
 
-## Released and accepted baseline
+## Release candidate baseline
 
-- `lib.py.cad.ci 0.12.0` @
-  `64656db8df528a5c0de799e62c0f028fd0133486`;
-- main CI/release run `45062701636` succeeded;
-- `tool.cad.ci v0.25.0` consumes this exact library release at
-  `92b9cbb59bf24f6b47ba1fae267f67f2becc503f`;
-- external released-stack acceptance run `45063617081` succeeded in
-  `tool.cad.ci.test` PR #135, including two items sharing one builder while
-  both item `ci.yml` files remain declarative.
-
-Issue #91 is complete. Root `cad-ci.yml` may name repository-owned builders,
-item `ci.yml` selects a builder, and `builder.yml` owns executable steps.
-Builder changes participate in selection and SCons signatures. Legacy inline
-steps remain available only as the migration compatibility path.
-
-Issue #87 previously moved durable complete-scope validation/state/publication
-composition out of `tool.cad.ci` and back into this library. The library
-remains the single source of truth for generic CAD-CI state and execution
-semantics.
+- durable publication/config implementation from #94 is merged on `main` at
+  `3b6234a49bdaeff220c0903bc072f18e962ef1e6`;
+- PR #95 library CI passed in run `45065937583`;
+- release #96 declares `lib.py.cad.ci 0.13.0`;
+- the released 0.13.0 commit becomes the required exact pin for
+  `tool.cad.ci` #137;
+- only after tool release and external acceptance in
+  `tool.cad.ci.test` #141 may CAD #288 / Forge #740 adopt the new lifecycle.
 
 ## Current work
 
-### #94 — config-owned durable lane integration
+### #96 — release 0.13.0
 
-**Now.** Add optional root Pages-source configuration and one high-level
-main/named complete-scope integration API. This is the generic owner-layer
-blocker for the action-free durable workflow in tool.cad.ci #137 and consumer
-migrations in CAD #288 / Forge #740.
-
-Keep GitHub Actions and domain site generators out of this library.
+**Now.** Publish the merged #94 contract as an exact tested library release.
+The normal main release workflow must create `v0.13.0` only from the exact
+main commit that contains the VERSION/pyproject/changelog bump.
 
 ## Open issue assessment
 
 | Issue | Status | Next |
 | --- | --- | --- |
-| #94 Config-owned durable Pages/lane integration | **now** | Define config semantics, implement/test library composition, release. |
+| #96 Release 0.13.0 durable publication contract | **now** | Merge release declaration after CI; verify exact published release. |
 | #89 Align historical changelog with shared meta template and guidance | **later / docs-only** | Apply shared changelog presentation without changing released behavior. |
 
 ## Non-goals
