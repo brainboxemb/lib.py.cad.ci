@@ -40,6 +40,22 @@ class Step:
 
 
 @dataclass(frozen=True)
+class PagesPublication:
+    """One configured Pages site output owned by a processed item."""
+
+    item: str
+    output: str
+
+
+@dataclass(frozen=True)
+class RepositoryConfig:
+    """Validated repository-wide configuration plus discovered items."""
+
+    items: dict[str, "Item"]
+    pages: PagesPublication | None = None
+
+
+@dataclass(frozen=True)
 class Item:
     """One consumer-owned folder that can be planned and run independently.
 
