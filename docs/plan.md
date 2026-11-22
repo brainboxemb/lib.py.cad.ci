@@ -2,43 +2,49 @@
 
 This file is the current source of truth for unfinished work in `lib.py.cad.ci`.
 
-The repository owns generic CAD-CI planning/execution semantics. Consumer- or
-domain-specific behavior belongs in consumer repositories.
+The repository owns generic CAD-CI planning/execution, durable build-store,
+Pages and generated-branch publication semantics. Tool/workflow repositories
+adapt these APIs; they do not reimplement them.
 
-## Current released and accepted state
+## Current released baseline
 
 `lib.py.cad.ci 0.11.0` is released at exact commit
 `e621daf6e309bdd0e3f643a12007f1b66490696d`.
 
-Current externally accepted thin tool:
-
-- `tool.cad.ci 0.18.1` @
-  `e29d3127d5d3f9310f3cab4e27430a64a61c21cc`;
-- `tool.cad.ci.test` #77 / PR #78 / run `45019713862` — success.
-
-Accepted library behavior includes selective active-closure startup, bounded
-SCons jobs, deterministic target-private dependency snapshots, durable
-publication support, dependency-output `copy:`, and signature-safe opt-in
-`selection_context: direct_dependents` with schema-5 public step evidence.
+The currently accepted released stack remains unchanged while issue #87 is
+developed. Consumers must not pin this branch.
 
 ## Current work
 
-No generic CAD-CI implementation is active.
+### #87 — durable complete-scope API
 
-Issue #83 is released and externally accepted. Forge #661 may now consume the
-released 0.11.0 / 0.18.1 pair and apply the active direct-dependent context at
-its domain-specific shared-batch boundary.
+Repository-wide audit of `tool.cad.ci` found duplicated generic durable-scope
+logic in its workflow helper. The duplicate validator has already diverged from
+this library: this library reserves complete scope `pr`, while the tool copy
+did not.
+
+Work order:
+
+1. Define durable scope state/resolution requirements and design here.
+2. Implement `cad_ci.durable` by composing existing planner/build-store/Git
+   publication functions; no new storage or execution engine.
+3. Unit-test missing/existing main/named scopes, validation, provenance,
+   selection and publication delegation.
+4. Release the library only after its CI is green.
+5. Update `tool.cad.ci` to the exact library release and remove its duplicate
+   validator/manifest/parser/publication orchestration.
+6. Re-run `tool.cad.ci.test` before any Forge/CAD repin.
 
 ## Open issue assessment — 2026-11-22
 
-No open library issues remain after #83 is closed.
+| Issue | Status | Next |
+| --- | --- | --- |
+| #87 Move durable complete-scope semantics out of tool.cad.ci | **now** | Library API + tests, then thin the tool. |
 
 ## Non-goals
 
-- no changed-path planner beyond the existing CAD-CI selector;
-- no domain-specific batch/model/reference concepts;
-- no implicit filtering of command work;
+- no changed-path planner beyond the existing selector;
 - no new scheduler or freshness engine;
-- no per-consumer process/container fan-out.
-
-The repository is back in demand-driven mode.
+- no new durable manifest schema;
+- no GitHub-specific concepts in the library;
+- no domain-specific Forge/CAD behavior.
