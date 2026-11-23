@@ -10,8 +10,9 @@ A Forge or CAD consumer must not migrate until one exact released
 
 ## 1. Configuration ownership
 
-The root `cad-ci.yml` owns repository-wide CI settings, item discovery and
-optional aliases for repository-owned builders.
+The root `cad-ci.yml` owns repository-wide CI settings, item discovery,
+immutable runtime-role mappings and optional aliases for repository-owned
+builders.
 
 Each normal item `ci.yml` is declarative and owns:
 - item ID and descriptive kind;
@@ -57,9 +58,98 @@ configure exactly one of `builder` or `steps`. New consumers should use the
 builder reference path.
 
 Generic behaviour must not be hidden in GitHub Actions YAML or consumer helper
-scripts. Generic code must not know Forge, SolidCraft, model, qualification,
-integration, native or gate semantics. Domain-specific builders belong to the
-consumer repository or a separately versioned domain tool, not this library.
+scripts. Generic CAD engine invocation/export belongs in this library when it
+is reusable across consumers. Generic code still must not know Forge stages,
+SolidCraft verification definitions, model-specific acceptance, qualification,
+integration, native or gate semantics; those remain with their owning
+consumer/verification layer.
+
+### Built-in generic CAD builders
+
+CAD-CI may provide a small catalog of reusable engine builders when the
+behavior is generic CAD execution/export rather than consumer policy.
+
+Initial built-in names:
+
+```text
+build123d
+cadquery
+```
+
+A normal item selects one directly:
+
+```yaml
+id: reference-build123d
+kind: model
+builder: build123d
+```
+
+No root `builders:` path entry is required for a built-in name.
+Built-in names are reserved; a repository-owned builder alias may not shadow a
+built-in.
+
+Built-in builder resolution produces the same normalized `Step` model and
+uses the same SCons graph, output validation, evidence and durable publication
+path as repository-owned builders. There is no separate engine scheduler.
+
+Root `cad-ci.yml` owns immutable runtime-role mappings:
+
+```yaml
+runtimes:
+  reference: ghcr.io/brainboxemb/cad-reference:v0.3.4
+```
+
+The initial `build123d` and `cadquery` builders require the `reference`
+runtime role. Runtime image values must be explicit immutable references:
+a digest or a non-`latest` tag. Untagged images and `latest` are invalid.
+The selected role and exact image reference are execution-significant and
+participate in the SCons target specification.
+
+The initial single-model contract is intentionally narrow:
+
+- source file is item-local `model.py`;
+- executing that source must leave final geometry in global `model`;
+- the builder writes exactly `model.stl` below `CAD_CI_OUTPUT`;
+- the repository is mounted read-only into the runtime container;
+- only the target output root is writable;
+- the container has no network access;
+- the builder does not perform geometry acceptance, preview rendering,
+  qualification or consumer-specific verification.
+
+The build123d adapter exports `getattr(model, "part", model)` through the
+runtime's build123d STL exporter. The CadQuery adapter supports the runtime's
+normal CadQuery model/assembly export path and writes the same canonical
+`model.stl` output.
+
+The consumer still owns item selection and source dependencies through
+`watch`, `needs` and `strategy`. A built-in builder does not invent
+model discovery or dependency fan-out.
+
+Runtime execution exposes the normal CAD-CI-owned values plus:
+
+```text
+CAD_CI_RUNTIME
+CAD_CI_RUNTIME_IMAGE
+```
+
+For a built-in builder, `CAD_CI_BUILDER` is the built-in name and
+`CAD_CI_BUILDER_PATH` is empty.
+
+A built-in builder has an explicit internal contract revision in its normalized
+command. Changing its execution/export semantics requires changing that
+revision so stale SCons/CacheDir results cannot remain current across a library
+upgrade.
+
+The initial built-in catalog does not define a SolidCraft builder. SolidCraft
+may be added through the same mechanism only after its engine-level input/output
+contract is separated from Forge compilation and verification semantics.
+
+The initial release also does not claim that per-item execution replaces a
+consumer's existing batched runtime efficiently. Before a high-cardinality
+consumer such as Forge replaces a proven batch path, the owner stack must
+either prove the per-item cost acceptable or add a generic batch contract using
+existing active-graph context. Performance optimization must not be recreated
+as Forge-local engine code.
 
 ### Durable publication source
 
