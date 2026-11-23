@@ -30,7 +30,7 @@ Required foundation:
 1. root package is reduced to the small public/core surface
    (`config.py`, `context.py`, `model.py`);
 2. implementation ownership is explicit under `builders/`, `repository/`,
-   `scons/`, `execution/` and `publication/`;
+   `scons/`, `execution/`, `verification/` and `publication/`;
 3. external process execution crosses one thin `execution/process.py` adapter;
 4. package discovery ships all subpackages in the wheel;
 5. `docs/manual/` contains copy-ready configuration templates;
@@ -52,8 +52,8 @@ A template may select a reusable builder plus a first-class declarative
 Ownership is explicit:
 
 - `lib.py.cad.ci` owns the SCons graph, batching, builder/runtime integration,
-  declarative verification configuration and the thin verification-stage
-  adapter;
+  declarative verification configuration and the thin `cad_ci/verification/`
+  integration adapter;
 - `lib.py.cad.verification` owns reusable verification mechanics and
   CAD-engine-specific verification adapters;
 - Forge/consumer repositories own only model-specific verification data such as
