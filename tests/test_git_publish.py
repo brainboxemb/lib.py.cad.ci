@@ -7,18 +7,18 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-import cad_ci.git_publish as git_publish
+import cad_ci.publication.git_publish as git_publish
 
-from cad_ci.build_store import prepare_main, prepare_named, prepare_overlay
-from cad_ci.git_publish import (
+from cad_ci.publication.build_store import prepare_main, prepare_named, prepare_overlay
+from cad_ci.publication.git_publish import (
     publish_build_scope,
     publish_pages,
     publish_pages_preview_cleanup,
     materialize_generated_branch,
 )
-from cad_ci.pages import Page, build_site
+from cad_ci.publication.pages import Page, build_site
 from cad_ci.model import Item, Step
-from cad_ci.scons_engine import ENGINE_SCHEMA as SCONS_ENGINE_SCHEMA
+from cad_ci.scons.engine import ENGINE_SCHEMA as SCONS_ENGINE_SCHEMA
 
 
 def git(cwd: Path, *args: str) -> str:

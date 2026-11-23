@@ -14,7 +14,7 @@ import unittest
 from unittest.mock import patch
 
 from cad_ci.config import load_repository
-from cad_ci.scons_engine import (
+from cad_ci.scons.engine import (
     CACHE_ROOT,
     DEPENDENCY_RUN_ROOT,
     REPORT_PATH,
@@ -28,7 +28,7 @@ from cad_ci.scons_engine import (
     target_specs,
     write_manifest,
 )
-from cad_ci.paths import source_inventory
+from cad_ci.repository.paths import source_inventory
 
 
 def _write(path: Path, text: str) -> None:
@@ -173,7 +173,7 @@ assert (out / "build.json").read_text()
             items = load_repository(root)
             request = resolve_request(items, {"selected"})
             with patch(
-                "cad_ci.scons_engine.source_inventory",
+                "cad_ci.scons.engine.source_inventory",
                 wraps=source_inventory,
             ) as inventory:
                 manifest_path = write_manifest(root, items, request)
@@ -321,7 +321,7 @@ assert (out / "build.json").read_text()
                 "import sys\n"
                 "from pathlib import Path\n"
                 "from cad_ci.config import load_repository\n"
-                "from cad_ci.scons_engine import resolve_request, run_scons\n"
+                "from cad_ci.scons.engine import resolve_request, run_scons\n"
                 "repo = Path(sys.argv[1])\n"
                 "items = load_repository(repo)\n"
                 "request = resolve_request(items, {'item'})\n"

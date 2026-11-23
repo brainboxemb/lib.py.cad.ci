@@ -15,7 +15,7 @@ from cad_ci.builders.batch import run_batch
 from cad_ci.builders.runtime import execute_manifest
 from cad_ci.config import ConfigError, load_repository
 from cad_ci.execution.process import ProcessResult
-from cad_ci.scons_engine import resolve_request, write_manifest
+from cad_ci.scons.engine import resolve_request, write_manifest
 
 
 def _write(path: Path, text: str) -> None:

@@ -5,7 +5,7 @@ import json
 import tempfile
 import unittest
 
-from cad_ci.build_store import (
+from cad_ci.publication.build_store import (
     BuildStoreError,
     install_scope,
     load_manifest,
@@ -19,7 +19,7 @@ from cad_ci.build_store import (
     update_named,
 )
 from cad_ci.model import Item, Step
-from cad_ci.scons_engine import ENGINE_SCHEMA as SCONS_ENGINE_SCHEMA
+from cad_ci.scons.engine import ENGINE_SCHEMA as SCONS_ENGINE_SCHEMA
 
 
 def configured_item(path: str, item_id: str) -> Item:

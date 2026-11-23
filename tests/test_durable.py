@@ -8,8 +8,8 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from cad_ci.build_store import BuildStoreError
-from cad_ci.durable import (
+from cad_ci.publication.build_store import BuildStoreError
+from cad_ci.publication.durable import (
     DurableScopeState,
     configured_pages_site,
     fetch_durable_scope_state,
@@ -135,7 +135,7 @@ class ResolveDurableScopeTests(unittest.TestCase):
                 )
                 return SHA_C
 
-            with patch("cad_ci.durable.materialize_generated_branch", side_effect=materialize) as call:
+            with patch("cad_ci.publication.durable.materialize_generated_branch", side_effect=materialize) as call:
                 state = fetch_durable_scope_state(
                     repo=repo,
                     generated_build=out,
@@ -159,7 +159,7 @@ class ResolveDurableScopeTests(unittest.TestCase):
             out = root / "generated"
 
             with patch(
-                "cad_ci.durable.materialize_generated_branch",
+                "cad_ci.publication.durable.materialize_generated_branch",
                 return_value=None,
             ) as materialize:
                 state = fetch_durable_scope_state(
@@ -187,7 +187,7 @@ class ResolveDurableScopeTests(unittest.TestCase):
             out = root / "generated"
 
             with patch(
-                "cad_ci.durable.materialize_generated_branch",
+                "cad_ci.publication.durable.materialize_generated_branch",
                 return_value=None,
             ):
                 state = fetch_durable_scope_state(
@@ -223,13 +223,13 @@ class PublishDurableScopeTests(unittest.TestCase):
             items = {"a": "ITEM-A", "b": "ITEM-B"}
             state = DurableScopeState("lane", SHA_B, False, True)
             with (
-                patch("cad_ci.durable.load_repository", return_value=items),
-                patch("cad_ci.durable.changed_files", return_value=("models/a.sc",)) as changed,
-                patch("cad_ci.durable.affected_items", side_effect=[{"a"}, {"a", "b"}]),
-                patch("cad_ci.durable.update_named") as update_named,
-                patch("cad_ci.durable.update_main") as update_main,
-                patch("cad_ci.durable.prepare_named") as prepare_named,
-                patch("cad_ci.durable.publish_build_scope", return_value=SHA_C) as publish,
+                patch("cad_ci.publication.durable.load_repository", return_value=items),
+                patch("cad_ci.publication.durable.changed_files", return_value=("models/a.sc",)) as changed,
+                patch("cad_ci.publication.durable.affected_items", side_effect=[{"a"}, {"a", "b"}]),
+                patch("cad_ci.publication.durable.update_named") as update_named,
+                patch("cad_ci.publication.durable.update_main") as update_main,
+                patch("cad_ci.publication.durable.prepare_named") as prepare_named,
+                patch("cad_ci.publication.durable.publish_build_scope", return_value=SHA_C) as publish,
             ):
                 result = publish_durable_scope(
                     repo=repo,
@@ -273,11 +273,11 @@ class PublishDurableScopeTests(unittest.TestCase):
             items = {"a": "ITEM-A", "b": "ITEM-B"}
             state = DurableScopeState("lane", SHA_A, True, False)
             with (
-                patch("cad_ci.durable.load_repository", return_value=items),
-                patch("cad_ci.durable.affected_items", return_value={"a", "b"}),
-                patch("cad_ci.durable.prepare_named") as prepare_named,
-                patch("cad_ci.durable.update_named") as update_named,
-                patch("cad_ci.durable.publish_build_scope", return_value=SHA_C),
+                patch("cad_ci.publication.durable.load_repository", return_value=items),
+                patch("cad_ci.publication.durable.affected_items", return_value={"a", "b"}),
+                patch("cad_ci.publication.durable.prepare_named") as prepare_named,
+                patch("cad_ci.publication.durable.update_named") as update_named,
+                patch("cad_ci.publication.durable.publish_build_scope", return_value=SHA_C),
             ):
                 publish_durable_scope(
                     repo=repo,
@@ -310,11 +310,11 @@ class PublishDurableScopeTests(unittest.TestCase):
             items = {"a": "ITEM-A", "b": "ITEM-B"}
             state = DurableScopeState("main", SHA_A, True, False)
             with (
-                patch("cad_ci.durable.load_repository", return_value=items),
-                patch("cad_ci.durable.affected_items", return_value={"a", "b"}),
-                patch("cad_ci.durable.prepare_main") as prepare_main,
-                patch("cad_ci.durable.update_main") as update_main,
-                patch("cad_ci.durable.publish_build_scope", return_value=SHA_C),
+                patch("cad_ci.publication.durable.load_repository", return_value=items),
+                patch("cad_ci.publication.durable.affected_items", return_value={"a", "b"}),
+                patch("cad_ci.publication.durable.prepare_main") as prepare_main,
+                patch("cad_ci.publication.durable.update_main") as update_main,
+                patch("cad_ci.publication.durable.publish_build_scope", return_value=SHA_C),
             ):
                 publish_durable_scope(
                     repo=repo,
@@ -346,12 +346,12 @@ class PublishDurableScopeTests(unittest.TestCase):
 
             state = DurableScopeState("main", SHA_B, False, True)
             with (
-                patch("cad_ci.durable.load_repository", return_value={"a": "ITEM-A"}),
-                patch("cad_ci.durable.changed_files", return_value=("x",)),
-                patch("cad_ci.durable.affected_items", side_effect=[{"a"}, {"a"}]),
-                patch("cad_ci.durable.update_main") as update_main,
-                patch("cad_ci.durable.update_named") as update_named,
-                patch("cad_ci.durable.publish_build_scope", return_value=SHA_C) as publish,
+                patch("cad_ci.publication.durable.load_repository", return_value={"a": "ITEM-A"}),
+                patch("cad_ci.publication.durable.changed_files", return_value=("x",)),
+                patch("cad_ci.publication.durable.affected_items", side_effect=[{"a"}, {"a"}]),
+                patch("cad_ci.publication.durable.update_main") as update_main,
+                patch("cad_ci.publication.durable.update_named") as update_named,
+                patch("cad_ci.publication.durable.publish_build_scope", return_value=SHA_C) as publish,
             ):
                 publish_durable_scope(
                     repo=repo,
@@ -375,7 +375,7 @@ class PublishDurableScopeTests(unittest.TestCase):
             repo = root / "repo"
             repo.mkdir()
             state = DurableScopeState("lane", SHA_A, True, True)
-            with patch("cad_ci.durable.publish_build_scope") as publish:
+            with patch("cad_ci.publication.durable.publish_build_scope") as publish:
                 with self.assertRaisesRegex(BuildStoreError, "cannot require a full run"):
                     publish_durable_scope(
                         repo=repo,
@@ -415,7 +415,7 @@ class PublishDurablePagesTests(unittest.TestCase):
             site.mkdir(parents=True)
 
             with patch(
-                "cad_ci.durable.load_repository_config",
+                "cad_ci.publication.durable.load_repository_config",
                 return_value=self.repository(),
             ):
                 self.assertEqual(
@@ -469,10 +469,10 @@ class PublishDurablePagesTests(unittest.TestCase):
 
             with (
                 patch(
-                    "cad_ci.durable.load_repository_config",
+                    "cad_ci.publication.durable.load_repository_config",
                     return_value=self.repository(),
                 ),
-                patch("cad_ci.durable.publish_pages", side_effect=publish),
+                patch("cad_ci.publication.durable.publish_pages", side_effect=publish),
             ):
                 result = publish_durable_pages(
                     repo=repo,
@@ -499,11 +499,11 @@ class PublishDurablePagesTests(unittest.TestCase):
 
             with (
                 patch(
-                    "cad_ci.durable.load_repository_config",
+                    "cad_ci.publication.durable.load_repository_config",
                     return_value=self.repository(),
                 ),
                 patch(
-                    "cad_ci.durable.publish_pages",
+                    "cad_ci.publication.durable.publish_pages",
                     return_value=SHA_B,
                 ) as publish,
             ):
@@ -581,15 +581,15 @@ class PublishDurablePagesTests(unittest.TestCase):
 
             with (
                 patch(
-                    "cad_ci.durable.load_repository_config",
+                    "cad_ci.publication.durable.load_repository_config",
                     return_value=repository,
                 ),
                 patch(
-                    "cad_ci.durable.render_pages_builder",
+                    "cad_ci.publication.durable.render_pages_builder",
                     side_effect=render,
                 ) as renderer,
                 patch(
-                    "cad_ci.durable.publish_pages",
+                    "cad_ci.publication.durable.publish_pages",
                     side_effect=publish,
                 ),
             ):
@@ -614,10 +614,10 @@ class PublishDurablePagesTests(unittest.TestCase):
 
             with (
                 patch(
-                    "cad_ci.durable.load_repository_config",
+                    "cad_ci.publication.durable.load_repository_config",
                     return_value=self.repository(pages=False),
                 ),
-                patch("cad_ci.durable.publish_pages") as publish,
+                patch("cad_ci.publication.durable.publish_pages") as publish,
             ):
                 result = publish_durable_pages(
                     repo=repo,

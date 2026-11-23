@@ -4,9 +4,9 @@ import sys
 import tempfile
 import unittest
 
-from cad_ci.build_store import BuildStoreError
+from cad_ci.publication.build_store import BuildStoreError
 from cad_ci.model import PagesPublication, Step
-from cad_ci.pages_renderer import render_pages_builder
+from cad_ci.publication.pages_renderer import render_pages_builder
 
 
 SHA_A = "a" * 40
