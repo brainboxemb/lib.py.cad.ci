@@ -404,6 +404,9 @@ def target_specs(
                     if item.builder_path is not None
                     else None
                 ),
+                "builder_verification_package": (
+                    item.builder_verification_package
+                ),
                 "runtime": item.runtime_role,
                 "runtime_image": item.runtime_image,
                 "internal": item.internal,
@@ -438,6 +441,9 @@ def target_specs(
                         item.builder_path.as_posix()
                         if item.builder_path is not None
                         else None
+                    ),
+                    "builder_verification_package": (
+                        item.builder_verification_package
                     ),
                     "runtime": item.runtime_role,
                     "runtime_image": item.runtime_image,
