@@ -66,7 +66,9 @@ needed to construct the SCons graph.
 
 ## Durable publication configuration
 
-Root configuration may carry one optional Pages reference:
+Root configuration may carry one optional Pages publication.
+
+Existing item-output mode:
 
 ```text
 publication.pages
@@ -74,9 +76,27 @@ publication.pages
   output -> exact declared item output
 ```
 
-The config loader validates the reference after all items/builders have been
-normalized. Executable site-generation logic remains in the referenced item's
-repository-owned builder.
+Post-build renderer mode:
+
+```text
+publication.pages
+  builder -> root builder alias
+  output  -> exact output declared by the builder's command step
+```
+
+`item` and `builder` are mutually exclusive. The config loader validates
+the reference after all items/builders have been normalized.
+
+Item-output mode keeps executable site-generation logic in the referenced
+item's normal repository-owned builder and therefore remains part of the one
+SCons graph.
+
+Post-build renderer mode resolves the same repository-owned builder alias but
+requires exactly one command step. It deliberately does **not** lower that step
+to SCons: the publication renderer has no rebuild/reuse decision and runs once
+only after the durable build commit exists. It reuses the normalized command,
+timeout, repository variables and safe output validation rules. It does not
+support dependency-copy actions or multiple steps.
 
 For compatibility, `load_repository(repo)` remains the item-only API used by
 existing planner/runner callers. New code that needs root metadata uses:
@@ -106,8 +126,10 @@ generated build branch present
   -> missing main scope: fail closed
 
 published complete build scope
-  -> resolve configured Pages site
-  -> copy site to temporary publication tree
+  -> item mode: resolve configured item output
+  -> builder mode: run one repository-owned renderer with complete-scope +
+     exact build-commit context into a temporary output root
+  -> validate configured Pages directory
   -> add generic source/build/scope provenance
   -> publish stable root or named subtree
 ```
@@ -119,6 +141,26 @@ duplicated in root publication configuration or workflow inputs.
 Git fetch/push remains delegated to `cad_ci.git_publish`; the durable adapter
 passes the selected branch names to those existing primitives. GitHub workflow
 orchestration stays outside the library API.
+
+The publication renderer runs from the repository root. CAD-CI-owned
+environment is populated after repository variables and contains:
+
+```text
+CAD_CI_REPO
+CAD_CI_OUTPUT
+CAD_CI_BUILDER
+CAD_CI_BUILDER_PATH
+CAD_CI_COMPLETE_SCOPE
+CAD_CI_BUILD_SCOPE
+CAD_CI_SOURCE_SHA
+CAD_CI_SOURCE_REF
+CAD_CI_BUILD_COMMIT
+```
+
+`CAD_CI_OUTPUT` is a fresh temporary root. The configured output is validated
+with the same safe file/directory and symlink rules used for normal declared
+outputs. The renderer receives no mutable generated-branch checkout and cannot
+change the already-published remote build commit.
 
 ## Repository variables
 
