@@ -266,7 +266,7 @@ class BuiltinBuilderBatchTests(unittest.TestCase):
             self.assertEqual(
                 run_batch(
                     "reference",
-                    2,
+                    3,
                     runtime_catalog_signature("reference"),
                     environ=env,
                     process=process,
@@ -290,6 +290,13 @@ class BuiltinBuilderBatchTests(unittest.TestCase):
                     for row in manifest["models"]
                 ],
                 [("a", "build123d"), ("b", "cadquery")],
+            )
+            self.assertEqual(
+                [
+                    row.get("engine_python")
+                    for row in manifest["models"]
+                ],
+                ["/opt/build123d/bin/python", None],
             )
 
     def test_runtime_executes_all_models_and_writes_per_model_results(self):
@@ -326,7 +333,7 @@ class BuiltinBuilderBatchTests(unittest.TestCase):
                     {
                         "schema": 1,
                         "runtime": "reference",
-                        "batch_contract": 2,
+                        "batch_contract": 3,
                         "models": [
                             {
                                 "item_id": "a",
