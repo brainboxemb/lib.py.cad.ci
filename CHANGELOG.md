@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.18.2
+
+- restrict CadQuery's model-owned STL export path to actual `cq.Assembly`
+  instances so normal `cq.Workplane` and Shape-style values continue through
+  `cadquery.exporters.export`;
+- preserve the v0.18.1 Assembly support while restoring the previously accepted
+  Workplane contract found by released-stack black-box acceptance;
+- add regression coverage proving a non-Assembly value with a callable
+  `.export` still uses the normal CadQuery exporter;
+- keep the existing one shared reference runtime/container and SCons topology.
+
 ## 0.18.1
 
 - fix the built-in CadQuery builder to honor the documented final-`model`
