@@ -2,47 +2,84 @@
 
 Current source of truth for unfinished work in `lib.py.cad.ci` (2026-11-23).
 
-This repository owns generic CAD-CI planning/execution, durable build-store and
-complete-scope state, Pages and generated-branch publication semantics.
-Tool/workflow repositories adapt these APIs; they do not reimplement them.
+This repository owns generic CAD-CI planning/execution, reusable CAD engine
+builders, durable build-store and complete-scope state, Pages and generated
+branch publication semantics. Tool/workflow repositories adapt these APIs; they
+do not reimplement them.
 
-## Released and accepted baseline
+## Released baseline
 
-- current released library: `lib.py.cad.ci 0.14.0` @
-  `b24e9a3826dfc07e07b4f3fd9971fcb4ab5aa12d`;
-- `tool.cad.ci v0.31.0` @
-  `27bdf67077ddd485cea95ba199069249c20c2a46` pins that exact release;
-- `tool.cad.ci.test` #223 externally accepted that stack;
-- #102 post-build Pages renderer implementation is merged on `main` at
-  `be84fc67e5bc8ba09b79a5f75d6999cb3315199e`; implementation PR #103 and
-  the post-merge built-wheel CI are green.
+- `lib.py.cad.ci 0.15.0` @
+  `24c3abb267feea9ae91f24f8fdb435cba68f089a`;
+- `tool.cad.ci v0.32.0` @
+  `19e894567ac534ce90428dc61c6afa126c1d3318` pins that exact library;
+- `tool.cad.ci.test` #232 is currently qualifying that exact stack, including
+  the 0.15.0 post-build Pages renderer through a real repository-owned builder.
 
 ## Current work
 
-### #104 — release 0.15.0
+### #106 — built-in generic CAD builder catalog
 
-**Now.** Publish the merged #102 contract as exact `lib.py.cad.ci 0.15.0`.
+**Design now; implementation after #232 acceptance.**
 
-The release declaration changes only version/changelog/plan metadata. The normal
-main release workflow must publish `v0.15.0` from the exact tested main commit.
+Consumer migrations show repeated engine/toolchain execution that is not
+repository-specific. Initial built-in builders:
 
-After release:
+```text
+build123d
+cadquery
+```
 
-1. verify the exact release/tag target;
-2. update/release `tool.cad.ci` against that exact library;
-3. black-box qualify the resulting tool in `tool.cad.ci.test`;
-4. only then resume Forge #740.
+A built-in name is selected directly:
+
+```yaml
+builder: build123d
+```
+
+without a root `builders:` path entry. Repository-owned builders keep their
+existing alias/path mechanism.
+
+Required contract:
+
+1. built-in names are reserved and cannot be shadowed by repository aliases;
+2. built-in resolution produces the same normal `Step`/SCons execution model;
+3. built-in builder semantic identity is part of the target signature so a
+   builder behavior change cannot reuse stale output;
+4. initial single-model contract uses item-local `model.py` and emits
+   `model.stl`;
+5. engine packages come from the immutable generic CAD runtime role, not Python
+   dependencies added to this library;
+6. runtime image selection remains explicit consumer configuration; do not pin
+   a mutable/latest runtime inside library code;
+7. design a batch variant/pattern using existing active-dependent context
+   before Forge adopts dozens of per-item engine invocations, so migration does
+   not regress runtime performance;
+8. geometry acceptance, previews, Forge command compilation and
+   consumer-specific batch projection remain outside these builders.
+
+Execution order:
+
+1. finish external v0.32 / library 0.15.0 acceptance in
+   `tool.cad.ci.test` #232;
+2. finalize requirements/design/SCons acceptance for #106;
+3. implement built-in resolution + build123d/CadQuery runtime adapters and
+   tests;
+4. release the library;
+5. update/release `tool.cad.ci`;
+6. black-box qualify built-in builders in `tool.cad.ci.test` using the
+   immutable `cad-reference` runtime;
+7. only then resume Forge #740 and replace duplicated engine build behavior.
 
 ## Open issue assessment
 
 | Issue | Status | Next |
 | --- | --- | --- |
-| #104 Release 0.15.0 post-build Pages renderer | **now** | Merge release declaration, verify exact v0.15.0 publication. |
+| #106 Add built-in generic CAD builder catalog | **design now / blocked on #232 for implementation** | Define built-in resolution/runtime/batch contract, then implement after v0.32 acceptance. |
 | #89 Align historical changelog | **later / docs-only** | Apply shared changelog presentation without runtime/API changes. |
 
-## Non-goals
+## Boundary
 
-- no runtime behavior change in the release declaration;
-- no tool/consumer migration before exact release verification;
-- no second scheduler/SCons graph/cache/reuse engine;
-- no consumer/domain-specific publication logic.
+Built-in builders are generic engine execution/export adapters, not generic
+verification policy. SCons remains the only rebuild/reuse engine. Runtime
+images remain owned/released by their runtime repository. Consumer repositories
+own their model semantics, verification definitions and presentation.
