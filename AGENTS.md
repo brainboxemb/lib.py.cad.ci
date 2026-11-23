@@ -92,6 +92,7 @@ canonical owner packages:
 - `cad_ci/repository/` — Git/path selection and planning;
 - `cad_ci/scons/` — SCons translation, driver and bundle mechanics;
 - `cad_ci/execution/` — process boundary, runner and timing;
+- `cad_ci/verification/` — CAD-CI integration/wiring into `lib.py.cad.verification`, never verification semantics;
 - `cad_ci/publication/` — build-store, durable, Pages and generated-ref publication.
 
 Do not add new owner implementation modules to the package root. Do not bypass
