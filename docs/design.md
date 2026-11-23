@@ -7,15 +7,18 @@ Detailed SCons execution semantics live in `docs/scons-engine.md`.
 
 `lib.py.cad.ci` owns generic CAD-CI behavior:
 
-- root, item and repository-owned builder configuration loading;
+- root, item, repository-owned builder and built-in CAD-builder configuration
+  loading;
 - changed-item selection;
 - translation to one SCons target graph;
 - consumer command environment and execution;
 - output/evidence handling;
 - durable build and Pages mechanics.
 
-It does not know Forge, SolidCraft, model-specific verification or other
-consumer-domain concepts.
+It may know generic CAD engine invocation/export adapters such as build123d
+and CadQuery. It does not know Forge stages/API contracts, SolidCraft
+verification definitions, model-specific acceptance or other consumer-domain
+concepts.
 
 `tool.cad.ci` is a thin CLI/workflow surface above this library. Consumer
 repositories own their `cad-ci.yml`, declarative item `ci.yml` files and
@@ -24,7 +27,8 @@ domain builder implementation.
 ## Configuration flow
 
 The root `cad-ci.yml` contains repository-wide configuration such as item
-discovery, defaults, repository variables and optional builder aliases.
+discovery, defaults, repository variables, immutable runtime roles and
+optional repository-owned builder aliases.
 
 The preferred public boundary is:
 
@@ -63,6 +67,73 @@ The library does not interpret the contents of domain builder scripts.
 Configuration is validated once when the repository is loaded. The resulting
 immutable item model carries all execution-significant repository settings
 needed to construct the SCons graph.
+
+## Built-in CAD builder resolution
+
+Builder resolution has two explicit sources:
+
+```text
+item builder name
+  -> built-in catalog?      -> library-owned normalized Step(s)
+  -> repository alias?      -> <builder directory>/builder.yml
+  -> otherwise              -> configuration error
+```
+
+Built-in names are reserved. Root `builders:` validation rejects an alias
+whose name is owned by the built-in catalog, so precedence is never implicit.
+
+The initial catalog metadata records:
+
+```text
+name       runtime role   contract revision   output
+build123d  reference      1                   model.stl
+cadquery   reference      1                   model.stl
+```
+
+The loader turns that metadata into the same immutable item/step objects used
+for repository-owned builders. Built-in items carry no repository builder path,
+so `CAD_CI_BUILDER_PATH` is empty and no consumer builder directory is added
+to the watch/input set.
+
+Root runtime configuration is separate from repository variables:
+
+```yaml
+runtimes:
+  reference: ghcr.io/brainboxemb/cad-reference:v0.3.4
+```
+
+The loaded item records the required role and resolved exact image reference.
+Both are serialized into every target specification. This makes an image change
+dirty without pretending the image is an ordinary consumer command variable.
+
+The normalized built-in command contains the built-in contract revision, for
+example conceptually:
+
+```text
+python -m cad_ci.cad_builder build123d --contract 1
+```
+
+The existing SCons signature therefore changes when the built-in implementation
+contract changes, even if consumer files and runtime image are unchanged.
+
+At action time the library-owned command adapter:
+
+1. validates the item-local `model.py`;
+2. invokes the normal Docker CLI using the resolved immutable runtime image;
+3. mounts the repository read-only at `/repo`;
+4. mounts only the target-private `CAD_CI_OUTPUT` read/write at `/output`;
+5. uses the item path as the container working directory;
+6. disables container networking;
+7. executes one engine-specific, domain-neutral model/export script;
+8. leaves normal output validation/evidence to the existing SCons driver.
+
+The runtime image owns build123d/CadQuery installations. This package does not
+add those engines as Python dependencies.
+
+The first release is single-item execution only. It intentionally does not
+replace high-cardinality batch consumers without performance proof. Any future
+batch adapter must use the existing active-graph context and remain in this
+generic owner layer rather than moving engine code back into Forge.
 
 ## Durable publication configuration
 
