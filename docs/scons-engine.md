@@ -695,6 +695,28 @@ SCons knows nothing about:
 
 Publication consumes completed candidate output only.
 
+The durable lifecycle may optionally run one repository-owned **Pages
+publication renderer** after the complete build scope has been published. This
+does not create a second SCons graph or target:
+
+1. the normal SCons graph has already completed;
+2. complete-scope preparation and generated-build publication have already
+   produced an exact immutable build commit;
+3. the config loader has normalized one root builder alias and requires exactly
+   one command step for publication-renderer mode;
+4. CAD-CI executes that command once from the repository root with a fresh
+   temporary output root and explicit complete-scope/source/build provenance
+   environment;
+5. the normal safe output snapshot validator checks every declared output;
+6. the configured Pages directory is copied/published through the existing
+   Pages branch logic.
+
+The publication renderer is a one-shot publication action, not a dirty/current
+decision. It has no target bundle, SConsign state, CacheDir interaction,
+dependency-output context or selection semantics. A non-zero exit, timeout or
+invalid/missing output fails Pages publication while leaving the already
+published generated build commit unchanged.
+
 ## 20. Implementation order
 
 Implementation starts only after this design and
