@@ -106,6 +106,7 @@ class Item:
     variables: tuple[tuple[str, str], ...] = ()
     builder: str | None = None
     builder_path: Path | None = None
+    builder_verification_package: bool = False
     runtime_role: str | None = None
     runtime_image: str | None = None
     verification: VerificationConfig | None = None
