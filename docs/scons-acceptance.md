@@ -98,6 +98,80 @@ inherited value, and the mapping participates in the SCons target signature.
 Invalid variable names, reserved prefixes and non-string values fail during
 configuration loading before SCons starts.
 
+## Case 2B - built-in CAD builder resolution
+
+Root configuration:
+
+~~~yaml
+runtimes:
+  reference: ghcr.io/example/cad-reference:v1.2.3
+items:
+  - model
+~~~
+
+Item:
+
+~~~yaml
+id: model
+builder: build123d
+~~~
+
+Expected:
+
+1. configuration succeeds without a root `builders:` alias;
+2. normalized builder is `build123d`;
+3. builder path is absent;
+4. final step owns `model.stl`;
+5. target specification contains runtime role `reference` and the exact image
+   `ghcr.io/example/cad-reference:v1.2.3`;
+6. command target specification contains built-in contract revision `1`;
+7. `CAD_CI_BUILDER=build123d`, `CAD_CI_BUILDER_PATH` is empty,
+   `CAD_CI_RUNTIME=reference` and `CAD_CI_RUNTIME_IMAGE` is the exact
+   configured image;
+8. identical second run is CURRENT;
+9. changing only the runtime image to another immutable tag rebuilds;
+10. changing the built-in contract revision in library conformance fixtures
+    changes the target signature.
+
+Repeat the resolution/signature assertions for `cadquery`.
+
+Invalid configuration fails before SCons when:
+- root `builders:` attempts to define `build123d` or `cadquery`;
+- the required `reference` runtime role is missing;
+- the runtime image is untagged or uses `latest`;
+- item-local `model.py` is missing.
+
+## Case 2C - built-in CAD runtime adapter
+
+Use a fake Docker executable for library unit coverage and the real immutable
+`cad-reference` image in external acceptance.
+
+For both build123d and CadQuery:
+
+1. adapter invokes Docker with repository read-only and output root read/write;
+2. container network is disabled;
+3. working directory matches the item path inside `/repo`;
+4. model source must expose global `model`;
+5. successful adapter creates exactly `model.stl`;
+6. missing `model`, engine import/export failure or non-zero Docker exit
+   produces normal command ERROR and no valid target bundle;
+7. symlink/unsafe output remains rejected by the existing output validator.
+
+The generic adapter performs no geometry acceptance, preview or consumer
+verification.
+
+## Case 2D - built-in builder performance boundary
+
+A high-cardinality consumer with many build123d/CadQuery items is not allowed
+to treat the initial single-item adapter as a proven replacement for an
+existing efficient batch solely because semantics pass.
+
+Before such a migration is accepted, record representative runtime evidence.
+If per-item container startup/import materially regresses the accepted
+consumer runtime, add a generic batch adapter in this owner layer using the
+existing active-graph context and acceptance cases. Do not restore duplicated
+engine execution in the consumer repository.
+
 ## Case 3 - resolved input membership
 
 Build step input pattern:
