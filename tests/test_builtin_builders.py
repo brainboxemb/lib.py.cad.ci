@@ -266,7 +266,7 @@ class BuiltinBuilderBatchTests(unittest.TestCase):
             self.assertEqual(
                 run_batch(
                     "reference",
-                    1,
+                    2,
                     runtime_catalog_signature("reference"),
                     environ=env,
                     process=process,
@@ -326,7 +326,7 @@ class BuiltinBuilderBatchTests(unittest.TestCase):
                     {
                         "schema": 1,
                         "runtime": "reference",
-                        "batch_contract": 1,
+                        "batch_contract": 2,
                         "models": [
                             {
                                 "item_id": "a",

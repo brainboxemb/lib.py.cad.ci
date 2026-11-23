@@ -1,0 +1,4 @@
+# Minimal item using the verified-reference root profile.
+
+id: example-build123d
+template: verified-reference

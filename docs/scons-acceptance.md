@@ -1146,7 +1146,13 @@ Required sequences:
    - unknown values fail before SCons;
    - `copy:` + selection_context fails before SCons.
 
-8. evidence/cache:
+8. effective direct-dependent configuration changes with the same selected IDs:
+   - the batch target signature changes;
+   - the batch must not remain CURRENT solely because the ID list is unchanged;
+   - this includes behavior inherited through root item templates;
+   - unrelated root configuration does not become a coarse batch input.
+
+9. evidence/cache:
    - public step evidence contains `active_dependents`;
    - engine/report/evidence schema versions reflect the new contract;
    - fresh CacheDir cannot restore a batch built for a different dependent set.

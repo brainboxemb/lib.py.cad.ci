@@ -215,6 +215,7 @@ def current_context(
     *,
     repo: Path | None = None,
     item_id: str | None = None,
+    items: dict[str, Item] | None = None,
 ) -> ItemContext:
     """Resolve current item and validate SCons-supplied direct dependencies."""
 
@@ -230,7 +231,8 @@ def current_context(
         if not item_id:
             raise ContextError("CAD_CI_ITEM is required")
 
-    items = load_repository(repo)
+    if items is None:
+        items = load_repository(repo)
     try:
         item = items[item_id]
     except KeyError as exc:

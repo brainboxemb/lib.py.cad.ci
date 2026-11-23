@@ -128,6 +128,9 @@ class ReleaseTests(unittest.TestCase):
             "cad_ci/publication/pages.py",
             "cad_ci/publication/pages_renderer.py",
             "cad_ci/verification/__init__.py",
+            "cad_ci/verification/catalog.py",
+            "cad_ci/verification/package.py",
+            "cad_ci/verification/runtime.py",
         }
         self.assertTrue(expected.issubset(names), expected - names)
 

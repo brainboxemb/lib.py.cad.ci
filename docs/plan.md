@@ -3,149 +3,66 @@
 Current source of truth for unfinished work in `lib.py.cad.ci` (2026-11-23).
 
 This repository owns generic CAD-CI planning/execution, reusable CAD engine
-builders, durable build-store and complete-scope state, Pages and generated
-branch publication semantics. Tool/workflow repositories adapt these APIs; they
-do not reimplement them.
+builders, verification integration, durable build-store and publication semantics.
 
-## Released baseline
+## Accepted baseline
 
-- `lib.py.cad.ci 0.15.0` @
-  `24c3abb267feea9ae91f24f8fdb435cba68f089a`;
-- `tool.cad.ci v0.32.0` @
-  `19e894567ac534ce90428dc61c6afa126c1d3318` pins that exact library;
-- `tool.cad.ci.test` #232 completed external acceptance of that exact stack;
-  the v0.32.0 blocker for the next owner-layer change is cleared.
+- #108 library-foundation work is merged at
+  `2b413782a2274c30506991993c71b717d3f05fa7` and its installed-wheel/SCons
+  suite is green;
+- `lib.py.cad.verification v0.16.0` is immutable at
+  `c7c145b7be0c602724e8cca874ef29990baaad1e`;
+- `tool.cad.ci v0.32.0` remains the last externally accepted tool stack while
+  this owner-layer work is in progress.
 
 ## Current work
 
-### #108 — harden library package foundation
-
-**Now / prerequisite for #106.**
-
-Before adding more builder behavior, make the library itself easier to navigate,
-package, test and modify safely.
-
-Required foundation:
-
-1. root package is reduced to the small public/core surface
-   (`config.py`, `context.py`, `model.py`);
-2. implementation ownership is explicit under `builders/`, `repository/`,
-   `scons/`, `execution/`, `verification/` and `publication/`;
-3. external process execution crosses one thin `execution/process.py` adapter;
-4. package discovery ships all subpackages in the wheel;
-5. `docs/manual/` contains copy-ready configuration templates;
-6. tests document the contract they protect and use owned fakes/adapters;
-7. performance remains a first-class invariant: one compatible N-model batch
-   means one runtime/container start, current/cache paths do not start the
-   runtime, and no second planner/cache/execution engine is introduced;
-8. the hierarchy must reduce architectural reconstruction work for future
-   maintainers/agents rather than add abstraction layers.
-
 ### #110 — compose generic builders with reusable CAD verification
 
-**Next after #108 / prerequisite for completing #106.**
+**Now / prerequisite for completing #106.**
 
-Keep root item templates as the consumer-owned profile/configuration layer.
-A template may select a reusable builder plus a first-class declarative
-`verification` contract.
+Add first-class declarative verification wiring without duplicating verification
+semantics:
 
-Ownership is explicit:
+1. repository pins the exact released verification package;
+2. item/template selects a verification adapter and definition;
+3. CAD-CI synthesizes one shared verification-package producer;
+4. the compatible runtime batch depends on that package once;
+5. build + verification run in the same shared runtime/container;
+6. public build and verify outputs are ordinary dependency-copy projections;
+7. all current/cache/rebuild decisions remain SCons-owned.
 
-- `lib.py.cad.ci` owns the SCons graph, batching, builder/runtime integration,
-  declarative verification configuration and the thin `cad_ci/verification/`
-  integration adapter;
-- `lib.py.cad.verification` owns reusable verification mechanics and
-  CAD-engine-specific verification adapters;
-- Forge/consumer repositories own only model-specific verification data such as
-  expected values, tolerances, views, mutations and reference geometry.
-
-CAD-CI lowers build -> verify into the same normal SCons graph and calls the
-existing verification library. Forge must not retain generic verification
-scripts/batch glue. Shared-batch runtime cardinality and current/cache behavior
-must remain unchanged.
+Initial adapter: `mesh-geometry` on the `reference` runtime, delegated to
+`lib.py.cad.verification v0.16.0`.
 
 ### #106 — extract reusable batched CAD builders from Forge
 
-**Blocked on #108 and #110.**
+**Blocked on #110.**
 
-Forge already proves the required execution shape: one normal CAD-CI/SCons
-graph, one shared producer, signature-safe active dependent context, one runtime
-batch, then normal `copy: dependency` projection back to each model. #106 moves
-that generic mechanism to its correct owner instead of inventing another one.
-
-Initial built-in builders:
-
-```text
-build123d
-cadquery
-```
-
-A model selects only the builder:
-
-```yaml
-id: reference-build123d
-builder: build123d
-```
-
-It does not declare the shared producer, runtime command, batch collection or
-copy plumbing. Built-in lowering creates that existing graph internally.
-
-Required contract:
-
-1. built-in names are reserved and cannot be shadowed by repository aliases;
-2. compatible builders are grouped by runtime role; build123d and CadQuery
-   initially share one `reference` runtime batch;
-3. the batch receives the exact active direct dependents through the mechanism
-   already released by #83;
-4. SCons remains the only dependency/freshness/cache engine;
-5. the shared producer writes per-model results and each model receives its own
-   normal dependency-copy projection;
-6. item-local `model.py` exposes global `model`; canonical initial output is
-   `model.stl`;
-7. runtime image selection remains explicit consumer configuration through
-   immutable/non-latest runtime-role mappings;
-8. geometry acceptance, previews, Forge command compilation and presentation
-   remain outside these generic builders.
-
-Execution order:
-
-1. finish library implementation and focused conformance tests;
-2. open one PR and run normal repository CI;
-3. release the library;
-4. repin/release `tool.cad.ci`;
-5. black-box qualify the exact released stack in `tool.cad.ci.test` using the
-   immutable `cad-reference` runtime;
-6. only then resume Forge #740 and remove the duplicated generic builder/batch
-   mechanics there.
+After #110 is green, complete builder release/black-box qualification and
+migrate Forge away from duplicated reference batch/package wiring.
 
 ## Open issue assessment
 
 | Issue | Status | Next |
 | --- | --- | --- |
-| #108 Harden library package foundation before further CAD builder work | **now** | Complete canonical package hierarchy, process boundary, packaging/manual/test contracts and performance invariants. |
-| #110 Compose generic CAD builders with reusable CAD verification | **next after #108** | Add first-class declarative verification wiring from CAD-CI into lib.py.cad.verification without Forge-owned generic scripts. |
-| #106 Extract reusable batched CAD builders from Forge | **blocked by #108/#110** | Resume after foundation and builder+verification composition are accepted. |
-| #89 Align historical changelog | **later / docs-only** | Apply shared changelog presentation without runtime/API changes. |
+| #110 Compose generic CAD builders with reusable CAD verification | **now** | Implement package + manifest + same-runtime verification wiring. |
+| #106 Extract reusable batched CAD builders from Forge | **blocked by #110** | Resume release/acceptance/migration after #110. |
+| #89 Align historical changelog | later / docs-only | Apply shared changelog presentation only. |
 
 ## Performance boundary
 
-Performance is part of the architecture, not a later optimization pass.
-
 - SCons remains the only rebuild/reuse engine;
 - compatible work is batched to amortize runtime startup;
-- no per-model Docker/process startup is acceptable;
-- cache/current results must avoid runtime startup entirely;
-- cleanup must not introduce repeated planning/repository scans;
-- deterministic structural assertions are preferred over fragile wall-clock
-  thresholds in normal CI;
-- development feedback time is also a performance constraint: prove contracts
-  at the cheapest reliable layer and keep Docker/real-engine/released-stack
-  checks out of the normal library loop unless that boundary itself is under
-  test.
+- one compatible N-model build+verification batch means one CAD runtime start;
+- the verification wheel is one shared dependency target, never per model;
+- current/cache results avoid runtime startup entirely;
+- no repeated repository planning/scanning is introduced;
+- normal CI uses cheap graph/call-count tests; real Docker/released-stack
+  acceptance stays in `tool.cad.ci.test`.
 
 ## Boundary
 
-Built-in builders are generic engine execution/export adapters, not generic
-verification policy. SCons remains the only rebuild/reuse engine. Runtime
-images remain owned/released by their runtime repository. Consumer repositories
-own their model semantics, verification definitions and presentation.
+`lib.py.cad.ci` owns verification integration only.
+`lib.py.cad.verification` owns verification semantics/adapters.
+Consumers own model-specific verification data and presentation policy.

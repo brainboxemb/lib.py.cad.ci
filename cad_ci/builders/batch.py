@@ -15,10 +15,15 @@ from .catalog import (
     runtime_catalog_signature,
 )
 
+from ..context import current_context
 from ..execution.process import (
     DEFAULT_PROCESS_RUNNER,
     ProcessExecutionError,
     ProcessRunner,
+)
+from ..verification.package import (
+    PACKAGE_ITEM_ID,
+    materialized_wheel,
 )
 
 
@@ -68,8 +73,8 @@ def build_manifest(
     catalog: str,
     *,
     environ: Mapping[str, str] | None = None,
-) -> tuple[Path, Path, str]:
-    """Write one manifest for active built-in model items in a runtime group."""
+) -> tuple[Path, Path, str, Path | None]:
+    """Write one manifest and resolve any shared verification wheel."""
 
     env = os.environ if environ is None else environ
     expected = RUNTIME_BATCH_CONTRACTS.get(runtime)
@@ -127,16 +132,28 @@ def build_manifest(
             raise CadBuilderError(
                 f"{item_id}: built-in {builder_name} requires regular model.py"
             )
-        rows.append(
-            {
-                "item_id": item_id,
-                "item_path": item_path,
-                "builder": builder.name,
-                "builder_contract": builder.contract,
-                "source": f"/repo/{item_path}/model.py",
-                "output": f"/output/items/{item_path}/{builder.output}",
+        row = {
+            "item_id": item_id,
+            "item_path": item_path,
+            "builder": builder.name,
+            "builder_contract": builder.contract,
+            "source": f"/repo/{item_path}/model.py",
+            "output": f"/output/items/{item_path}/{builder.output}",
+        }
+        if item.verification is not None:
+            row["verification"] = {
+                "adapter": item.verification.adapter,
+                "definition": f"/repo/{item.verification.definition}",
+                "verification_id": item.verification.verification_id,
+                "output": f"/output/items/{item_path}/verification",
             }
-        )
+        rows.append(row)
+
+    verification_wheel = None
+    if any("verification" in row for row in rows):
+        context = current_context(repo=repo, items=items)
+        dist = context.dependency(PACKAGE_ITEM_ID).output("dist")
+        verification_wheel = materialized_wheel(dist)
 
     output.mkdir(parents=True, exist_ok=True)
     manifest = output / "batch-manifest.json"
@@ -156,7 +173,7 @@ def build_manifest(
         + "\n",
         encoding="utf-8",
     )
-    return manifest, report, image
+    return manifest, report, image, verification_wheel
 
 
 def run_batch(
@@ -171,7 +188,7 @@ def run_batch(
 
     env = os.environ if environ is None else environ
     runner = DEFAULT_PROCESS_RUNNER if process is None else process
-    manifest, report, image = build_manifest(
+    manifest, report, image, verification_wheel = build_manifest(
         runtime,
         contract,
         catalog,
@@ -179,7 +196,15 @@ def run_batch(
     )
     repo = Path(_required(env, "CAD_CI_REPO")).resolve()
     output = Path(_required(env, "CAD_CI_OUTPUT")).resolve()
-    package_dir = Path(__file__).resolve().parent
+    cad_ci_dir = Path(__file__).resolve().parents[1]
+    pythonpath = "/cad-ci-lib"
+    extra_mounts: list[str] = []
+    if verification_wheel is not None:
+        pythonpath = "/cad-verification.whl:/cad-ci-lib"
+        extra_mounts = [
+            "-v",
+            f"{verification_wheel}:/cad-verification.whl:ro",
+        ]
 
     runner.run(["docker", "pull", image], cwd=repo, check=True)
     completed = runner.run(
@@ -188,17 +213,20 @@ def run_batch(
             "run",
             "--rm",
             "--pull=never",
+            "-e",
+            f"PYTHONPATH={pythonpath}",
             "-v",
             f"{repo}:/repo:ro",
             "-v",
             f"{output}:/output",
             "-v",
-            f"{package_dir}:/cad-ci-builders:ro",
+            f"{cad_ci_dir}:/cad-ci-lib/cad_ci:ro",
+            *extra_mounts,
             "-w",
             "/repo",
             image,
             "python",
-            "/cad-ci-builders/runtime.py",
+            "/cad-ci-lib/cad_ci/builders/runtime.py",
             "--manifest",
             f"/output/{manifest.name}",
             "--report",

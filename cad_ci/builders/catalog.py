@@ -38,7 +38,7 @@ BUILTIN_BUILDERS: dict[str, BuiltinBuilder] = {
 }
 
 RUNTIME_BATCH_CONTRACTS = {
-    "reference": 1,
+    "reference": 2,
 }
 
 
@@ -108,21 +108,53 @@ def runtime_batch_step(
     )
 
 
+def projection_steps(
+    builder_name: str,
+    *,
+    dependency: str,
+    item_path: Path,
+    verification: bool = False,
+) -> tuple[Step, ...]:
+    """Return normal copy steps projecting one shared-batch model result."""
+
+    builder = BUILTIN_BUILDERS[builder_name]
+    source = f"items/{item_path.as_posix()}"
+    steps = [
+        Step(
+            id="build",
+            copy=DependencyCopy(
+                dependency=dependency,
+                source=source,
+            ),
+            outputs=(builder.output,),
+            inputs=(),
+        )
+    ]
+    if verification:
+        steps.append(
+            Step(
+                id="verify",
+                copy=DependencyCopy(
+                    dependency=dependency,
+                    source=source,
+                ),
+                outputs=("verification",),
+                inputs=(),
+            )
+        )
+    return tuple(steps)
+
+
 def projection_step(
     builder_name: str,
     *,
     dependency: str,
     item_path: Path,
 ) -> Step:
-    """Return the normal copy step projecting one model from its shared batch."""
+    """Return the compatibility build-only projection step."""
 
-    builder = BUILTIN_BUILDERS[builder_name]
-    return Step(
-        id="build",
-        copy=DependencyCopy(
-            dependency=dependency,
-            source=f"items/{item_path.as_posix()}",
-        ),
-        outputs=(builder.output,),
-        inputs=(),
-    )
+    return projection_steps(
+        builder_name,
+        dependency=dependency,
+        item_path=item_path,
+    )[0]
