@@ -308,7 +308,7 @@ class VerificationHostBatchTests(unittest.TestCase):
                 self.assertEqual(
                     run_batch(
                         "reference",
-                        2,
+                        3,
                         runtime_catalog_signature("reference"),
                         environ=env,
                         process=process,
@@ -434,7 +434,7 @@ class VerificationRuntimeTests(unittest.TestCase):
                     {
                         "schema": 1,
                         "runtime": "reference",
-                        "batch_contract": 2,
+                        "batch_contract": 3,
                         "models": rows,
                     }
                 ),
