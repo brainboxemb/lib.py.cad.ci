@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.15.0
+
+- add a mutually exclusive `publication.pages.builder/output` mode for
+  repository-owned Pages rendering after the exact durable build commit exists;
+- execute that publication builder once outside SCons after normal CAD-CI and
+  durable build publication, with complete-scope/source/build provenance in
+  CAD-CI-owned environment and a fresh temporary output root;
+- validate renderer output through the existing safe output rules and keep
+  generic stable/named Pages publication and provenance handling unchanged;
+- preserve existing `publication.pages.item/output` behavior and keep the
+  renderer outside scheduling, rebuild, cache and GitHub orchestration logic.
+
 ## 0.14.0
 
 - allow the high-level durable build publisher to target a caller-selected
