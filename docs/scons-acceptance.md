@@ -98,6 +98,90 @@ inherited value, and the mapping participates in the SCons target signature.
 Invalid variable names, reserved prefixes and non-string values fail during
 configuration loading before SCons starts.
 
+
+## Case 2B - built-in CAD builder resolution
+
+Root configuration:
+
+~~~yaml
+runtimes:
+  reference: ghcr.io/example/cad-reference:v1.2.3
+items:
+  - models/*
+~~~
+
+Items:
+
+~~~yaml
+# models/a/ci.yml
+id: a
+builder: build123d
+
+# models/b/ci.yml
+id: b
+builder: cadquery
+~~~
+
+Expected:
+
+1. both items load without root `builders:` aliases;
+2. both retain their public builder names and have no repository builder path;
+3. both receive one normal copy step owning `model.stl`;
+4. both depend on the same internal `reference` producer;
+5. that producer is one ordinary Item with one command step and
+   `selection_context: direct_dependents`;
+6. a request for only `a` gives the producer active dependents `["a"]`;
+7. a request for `a` and `b` gives it `["a","b"]` and still only one
+   producer target;
+8. runtime role/image and active-dependent set participate in producer target
+   identity;
+9. changing the runtime image or built-in batch contract invalidates the
+   producer normally;
+10. the model files contain no producer id, copy action or runtime command.
+
+Invalid configuration fails before SCons when:
+- root `builders:` attempts to define `build123d` or `cadquery`;
+- the required `reference` runtime role is missing;
+- the runtime image is untagged or uses `latest`;
+- item-local `model.py` is missing.
+
+## Case 2C - built-in shared runtime batch
+
+Use a fake Docker process for focused library tests and the real immutable
+`cad-reference` image in external acceptance.
+
+With one active build123d model and one active CadQuery model:
+
+1. the producer writes one manifest containing both model ids, item paths,
+   builder names and output paths;
+2. exactly one `docker run` starts the compatible `reference` runtime;
+3. repository source is mounted read-only and the producer output root is
+   writable;
+4. both model sources execute in that same runtime process;
+5. build123d and CadQuery each write their own canonical `model.stl`;
+6. the producer writes per-model pass/error rows plus aggregate status;
+7. failure of one case does not prevent a later case from being attempted;
+8. any case failure fails the producer target overall;
+9. normal dependency-copy validation projects only the requested model's
+   declared output.
+
+## Case 2D - batch selection/cache safety
+
+Use the existing Case 32 active-direct-dependent semantics.
+
+Sequence:
+
+1. select only model A -> producer receives `["A"]`, runs once, A copies;
+2. repeat identical selection -> producer may be CURRENT/CACHE_RESTORED;
+3. select only model B -> producer signature differs and cannot reuse A's
+   partial batch as current;
+4. select A + B -> one producer run receives both ids;
+5. full run -> producer receives every processed built-in model using that
+   runtime role;
+6. no selected built-in model -> producer does not start.
+
+No per-model runtime/container-start path is accepted.
+
 ## Case 3 - resolved input membership
 
 Build step input pattern:
@@ -1098,5 +1182,6 @@ that each contain `builder: shared`, and one
    invalid;
 7. legacy schema-1 item-local steps retain their prior execution semantics.
 
-No acceptance case depends on a built-in domain builder. Generic CAD-CI only
-resolves the repository-owned builder selected by the consumer.
+Repository-owned builder acceptance remains unchanged. Built-in generic engine
+builders additionally use Cases 2B-2D; they lower to the same normal Step,
+dependency-copy and SCons mechanisms rather than defining a second scheduler.

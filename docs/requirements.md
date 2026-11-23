@@ -10,8 +10,9 @@ A Forge or CAD consumer must not migrate until one exact released
 
 ## 1. Configuration ownership
 
-The root `cad-ci.yml` owns repository-wide CI settings, item discovery and
-optional aliases for repository-owned builders.
+The root `cad-ci.yml` owns repository-wide CI settings, item discovery,
+immutable runtime-role mappings and optional aliases for repository-owned
+builders.
 
 Each normal item `ci.yml` is declarative and owns:
 - item ID and descriptive kind;
@@ -57,9 +58,114 @@ configure exactly one of `builder` or `steps`. New consumers should use the
 builder reference path.
 
 Generic behaviour must not be hidden in GitHub Actions YAML or consumer helper
-scripts. Generic code must not know Forge, SolidCraft, model, qualification,
-integration, native or gate semantics. Domain-specific builders belong to the
-consumer repository or a separately versioned domain tool, not this library.
+scripts. Generic CAD engine invocation/export belongs in this library when it
+is reusable across consumers. Generic code still must not know Forge stages,
+SolidCraft verification definitions, model-specific acceptance, qualification,
+integration, native or gate semantics; those remain with their owning
+consumer/verification layer.
+
+
+### Built-in generic CAD builders
+
+CAD-CI provides reusable engine builders when the behavior is generic CAD
+execution/export rather than consumer policy.
+
+Initial built-in names:
+
+```text
+build123d
+cadquery
+```
+
+A normal model item selects one directly:
+
+```yaml
+id: reference-build123d
+kind: model
+builder: build123d
+```
+
+No root `builders:` path entry is required. Built-in names are reserved and
+repository-owned aliases may not shadow them.
+
+#### Model information versus builder information
+
+The model item owns model information only: identity, processing state,
+model/domain dependencies, source/watch configuration and selected builder.
+
+The built-in builder owns how compatible models are executed: runtime role,
+shared producer, active-model collection, engine invocation/export, batch output
+layout and dependency-copy projection. Consumer templates must not repeat that
+plumbing.
+
+#### Existing graph, not a second scheduler
+
+Built-in lowering uses the normal existing CAD-CI graph:
+
+```text
+selected model items
+        |
+        v
+one shared runtime producer
+(selection_context: direct_dependents)
+        |
+        v
+one runtime batch for active compatible models
+        |
+        v
+items/<model path>/model.stl
+        |
+        v
+normal copy: dependency projection per model
+```
+
+SCons remains the only dependency, freshness and cache engine. The batch
+producer receives the exact active downstream item ids through
+`CAD_CI_ACTIVE_DEPENDENTS_JSON`, the signature-safe context already defined by
+the generic engine.
+
+Root `cad-ci.yml` owns explicit runtime-role mappings:
+
+```yaml
+runtimes:
+  reference: ghcr.io/brainboxemb/cad-reference:v0.3.4
+```
+
+Runtime image references must use a digest or an explicit non-`latest` tag.
+The role and exact image participate in target identity. Compatible builders may
+share a runtime role; initially build123d and CadQuery share the single
+`reference` batch invocation.
+
+The initial engine contract is intentionally narrow:
+
+- source file is item-local `model.py`;
+- executing the source leaves final geometry in global `model`;
+- canonical output is `model.stl`;
+- build123d exports `getattr(model, "part", model)`;
+- CadQuery uses its normal exporter for the exposed model/assembly;
+- the repository is mounted read-only into the runtime;
+- the producer output root is the writable batch result location;
+- all active compatible models are processed sequentially inside the one runtime
+  process and keep per-model status evidence;
+- one model failure does not hide later model results, although the batch target
+  fails overall;
+- no geometry acceptance, preview generation, qualification or
+  consumer-specific verification is performed by the generic builder.
+
+The runtime producer command receives normal CAD-CI values plus:
+
+```text
+CAD_CI_RUNTIME
+CAD_CI_RUNTIME_IMAGE
+CAD_CI_ACTIVE_DEPENDENTS_JSON
+```
+
+Changing builder/batch semantics requires changing the built-in contract
+revision so stale SCons/CacheDir results cannot remain current.
+
+The initial catalog does not define a SolidCraft builder. It may be added only
+after its generic model/build contract is separated from Forge compilation and
+verification semantics.
 
 ### Durable publication source
 

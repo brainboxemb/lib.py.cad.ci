@@ -60,6 +60,9 @@ items:
   - tool
   - examples/*
 
+runtimes:
+  reference: ghcr.io/brainboxemb/cad-reference:v0.3.4
+
 builders:
   python-model: ci/builders/python-model
 ~~~
@@ -98,8 +101,8 @@ strategy:
   reuse: true
 ~~~
 
-The root builder alias resolves to a repository directory. That directory owns
-one `builder.yml`:
+A repository-owned root builder alias resolves to a repository directory.
+That directory owns one `builder.yml`:
 
 ~~~yaml
 schema: 1
@@ -124,6 +127,57 @@ steps:
 
 A shell command may expand `CAD_CI_BUILDER_PATH`; argv-style commands receive
 the same environment but do not perform shell expansion themselves.
+
+
+A normal item may instead select a reserved built-in builder:
+
+~~~yaml
+id: reference-build123d
+kind: model
+builder: build123d
+~~~
+
+The item does not contain runtime/batch/copy implementation. Configuration
+lowering attaches it to one internal shared producer for the built-in's runtime
+role and gives the item one normal dependency-copy projection step.
+
+For the initial catalog:
+
+~~~text
+build123d -> reference runtime
+cadquery  -> reference runtime
+~~~
+
+Both therefore share one producer when active in the same run.
+
+The producer is an ordinary internal Item/Step node. Its command step uses
+`selection_context: direct_dependents`, so the existing active graph supplies
+the exact requested model ids through `CAD_CI_ACTIVE_DEPENDENTS_JSON`. The
+producer's signature includes that set, its runtime role/image and its resolved
+model/config inputs.
+
+The producer command writes one batch manifest, starts the configured runtime
+once, processes all active compatible models in that runtime process, and writes
+results below:
+
+~~~text
+items/<item path>/model.stl
+~~~
+
+Each public model item then uses the existing `copy: dependency` action to
+project its own `model.stl`. SCons therefore still sees only normal targets,
+dependencies, signatures and bundles.
+
+The producer command environment includes:
+
+~~~text
+CAD_CI_RUNTIME
+CAD_CI_RUNTIME_IMAGE
+CAD_CI_ACTIVE_DEPENDENTS_JSON
+~~~
+
+The child model retains `CAD_CI_BUILDER` identity in its normal target
+signature; `builder_path` is absent for built-ins.
 
 Rules:
 - `kind` is descriptive only;
