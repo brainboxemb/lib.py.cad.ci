@@ -80,6 +80,25 @@ Keep workflows orchestration-only. Put generic behaviour in this library.
 All Python modules and non-obvious logic need concise explanatory
 docstrings/comments. Keep one logical change in one branch/PR.
 
+### Test maintainability
+
+Tests are executable contract documentation, not only regression checks.
+
+- every non-trivial test method must have a short docstring stating the
+  behaviour/contract it protects;
+- conformance/acceptance-oriented tests should name the relevant documented
+  acceptance case or requirement when one exists;
+- fixture builders and fakes need a docstring when their shape is meaningful to
+  the contract;
+- comment **why** unusual setup, ordering, mocking or assertions are required;
+  do not comment obvious Python/assertion mechanics;
+- prefer behaviour names and stable contract language over implementation
+  details in test names;
+- keep unit/conformance/integration/black-box responsibilities explicit; see
+  `tests/README.md`;
+- when production behaviour changes, update the requirement/design/acceptance
+  text and the explanatory test documentation in the same change.
+
 ## Repository plan
 
 `docs/plan.md` is the current source of truth for unfinished repository work.

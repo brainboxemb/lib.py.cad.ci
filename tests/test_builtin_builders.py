@@ -19,12 +19,18 @@ from cad_ci.scons_engine import resolve_request, write_manifest
 
 
 def _write(path: Path, text: str) -> None:
+    """Write one minimal fixture file while creating its parent directory."""
+
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(text, encoding="utf-8")
 
 
 class BuiltinBuilderConfigTests(unittest.TestCase):
+    """Conformance tests for built-in builder lowering and configuration."""
+
     def make_repo(self, root: Path) -> None:
+        """Create three model items sharing the reference runtime group."""
+
         _write(
             root / "cad-ci.yml",
             "schema: 1\n"
@@ -48,6 +54,8 @@ class BuiltinBuilderConfigTests(unittest.TestCase):
             )
 
     def test_models_lower_to_one_shared_runtime_producer(self):
+        """Built-in model config lowers to one shared producer + projections."""
+
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             self.make_repo(root)
@@ -99,6 +107,8 @@ class BuiltinBuilderConfigTests(unittest.TestCase):
             )
 
     def test_active_models_feed_signature_safe_shared_batch_context(self):
+        """Acceptance Case 32: active dependents define shared-batch identity."""
+
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             self.make_repo(root)
@@ -128,6 +138,8 @@ class BuiltinBuilderConfigTests(unittest.TestCase):
             )
 
     def test_builtin_names_are_reserved_for_library_owned_builders(self):
+        """Consumer aliases must never shadow library-owned built-in names."""
+
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             _write(
@@ -144,6 +156,8 @@ class BuiltinBuilderConfigTests(unittest.TestCase):
                 load_repository(root)
 
     def test_all_disabled_builtin_models_disable_internal_producer(self):
+        """The internal batch stays inactive when all consumers are disabled."""
+
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             _write(
@@ -164,6 +178,8 @@ class BuiltinBuilderConfigTests(unittest.TestCase):
             self.assertEqual(producer.steps[0].inputs, ())
 
     def test_builtin_requires_runtime_and_model_source(self):
+        """Invalid built-in runtime/source contracts fail during config load."""
+
         cases = (
             (
                 "schema: 1\nitems: [a]\n",
@@ -198,7 +214,11 @@ class BuiltinBuilderConfigTests(unittest.TestCase):
 
 
 class BuiltinBuilderBatchTests(unittest.TestCase):
+    """Unit/conformance tests for one shared built-in runtime batch."""
+
     def make_repo(self, root: Path) -> None:
+        """Create build123d and CadQuery consumers sharing one runtime batch."""
+
         _write(
             root / "cad-ci.yml",
             "schema: 1\n"
@@ -213,6 +233,8 @@ class BuiltinBuilderBatchTests(unittest.TestCase):
             _write(root / item_id / "model.py", "model = object()\n")
 
     def test_host_collects_compatible_builders_into_one_container_run(self):
+        """Compatible active engines result in exactly one runtime start."""
+
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             self.make_repo(root)
@@ -225,6 +247,8 @@ class BuiltinBuilderBatchTests(unittest.TestCase):
                 "CAD_CI_ACTIVE_DEPENDENTS_JSON": '["a","b"]',
             }
 
+            # The contract is one runtime start for the active batch; Docker
+            # itself is not under test here.
             calls = []
 
             def fake_run(command, **kwargs):
@@ -261,6 +285,8 @@ class BuiltinBuilderBatchTests(unittest.TestCase):
             )
 
     def test_runtime_executes_all_models_and_writes_per_model_results(self):
+        """One runtime process executes and reports every manifest model."""
+
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             source_a = root / "a" / "model.py"
@@ -270,6 +296,7 @@ class BuiltinBuilderBatchTests(unittest.TestCase):
             _write(source_a, "model = object()\n")
             _write(source_b, "model = object()\n")
 
+            # Fake engine modules isolate batch semantics from engine installs.
             build123d = types.ModuleType("build123d")
 
             def export_stl(model, path):
@@ -327,6 +354,8 @@ class BuiltinBuilderBatchTests(unittest.TestCase):
             )
 
     def test_runtime_keeps_later_models_observable_after_one_failure(self):
+        """One failed model must not hide results for later batch models."""
+
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             bad = root / "bad" / "model.py"
