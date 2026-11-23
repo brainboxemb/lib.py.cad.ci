@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.14.0
+
+- allow the high-level durable build publisher to target a caller-selected
+  generated build branch while preserving `build` as the compatibility
+  default;
+- allow configured durable Pages publication to target a caller-selected
+  generated Pages branch while preserving `gh-pages` as the compatibility
+  default;
+- keep complete-scope layout, provenance, source-freshness checks, non-force
+  retry semantics and repository `cad-ci.yml` unchanged;
+- add regression coverage for alternate refs such as
+  `test-output/build` and `test-output/gh-pages`.
+
 ## 0.13.0
 
 - add optional root `publication.pages` configuration that identifies one
