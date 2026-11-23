@@ -12,6 +12,9 @@ import unittest
 import zipfile
 from unittest.mock import patch
 
+import cad_ci.builders.batch as batch_module
+from cad_ci.builders.catalog import runtime_catalog_signature
+from cad_ci.builders.batch import run_batch
 from cad_ci.builders.runtime import execute_manifest
 from cad_ci.config import ConfigError, load_repository
 from cad_ci.execution.process import ProcessResult
@@ -28,6 +31,19 @@ def _write(path: Path, text: str) -> None:
 
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(text, encoding="utf-8")
+
+
+class RecordingProcessRunner:
+    """Record host process requests without starting Docker."""
+
+    def __init__(self) -> None:
+        self.calls: list[list[str]] = []
+
+    def run(self, command, *, cwd=None, check=False):
+        """Record one command and report success."""
+
+        self.calls.append(list(command))
+        return ProcessResult(returncode=0)
 
 
 class WheelProducingRunner:
@@ -247,6 +263,72 @@ class VerificationGraphTests(unittest.TestCase):
                     _write(root / "model" / "geometry.json", "{}\n")
                     with self.assertRaisesRegex(ConfigError, expected):
                         load_repository(root)
+
+
+class VerificationHostBatchTests(unittest.TestCase):
+    """Prove verification does not add another CAD runtime start."""
+
+    def test_verified_batch_mounts_one_wheel_in_one_docker_run(self):
+        """Shared verification package is injected into the existing container."""
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            VerificationGraphTests().make_repo(root)
+            output = root / "build" / ".cad-ci-runtime" / "reference"
+            wheel = root / "dependency" / "verification.whl"
+            wheel.parent.mkdir(parents=True)
+            wheel.write_bytes(b"wheel")
+
+            class Dependency:
+                def output(self, name):
+                    self_name = name
+                    if self_name != "dist":
+                        raise AssertionError(self_name)
+                    return wheel.parent
+
+            class Context:
+                def dependency(self, item_id):
+                    self_id = item_id
+                    if self_id != "cad-ci-verification-package":
+                        raise AssertionError(self_id)
+                    return Dependency()
+
+            process = RecordingProcessRunner()
+            env = {
+                "CAD_CI_REPO": str(root),
+                "CAD_CI_OUTPUT": str(output),
+                "CAD_CI_RUNTIME": "reference",
+                "CAD_CI_RUNTIME_IMAGE": "ghcr.io/example/cad-reference:v1.2.3",
+                "CAD_CI_ACTIVE_DEPENDENTS_JSON": '["a-reference","b-reference"]',
+            }
+            with (
+                patch.object(batch_module, "current_context", return_value=Context()),
+                patch.object(batch_module, "materialized_wheel", return_value=wheel),
+            ):
+                self.assertEqual(
+                    run_batch(
+                        "reference",
+                        2,
+                        runtime_catalog_signature("reference"),
+                        environ=env,
+                        process=process,
+                    ),
+                    0,
+                )
+
+            docker_runs = [
+                call for call in process.calls if call[:2] == ["docker", "run"]
+            ]
+            self.assertEqual(len(docker_runs), 1)
+            command = docker_runs[0]
+            self.assertIn(
+                "PYTHONPATH=/cad-verification.whl:/cad-ci-lib",
+                command,
+            )
+            self.assertIn(
+                f"{wheel}:/cad-verification.whl:ro",
+                command,
+            )
 
 
 class VerificationPackageTests(unittest.TestCase):
