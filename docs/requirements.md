@@ -1360,3 +1360,40 @@ For a pattern ending in `/**`:
 - literal `folder/**` keeps its existing folder-and-descendants behavior;
 - matching does not trigger another filesystem inventory or alter item
   selection/fan-out semantics beyond honoring the configured pattern.
+
+## Repository-builder verification package capability
+
+A repository-owned builder may request the exact root-pinned verification
+package without naming any internal CAD-CI item:
+
+```yaml
+schema: 1
+verification_package: true
+
+steps:
+  - id: verify
+    run: [python, verify.py]
+```
+
+Requirements:
+
+- `verification_package` is optional and must be boolean;
+- `true` requires root `verification.package`;
+- the existing generic verification package materializer is reused exactly
+  once for all built-in and repository-builder consumers;
+- the requesting item receives the package as a normal SCons dependency;
+- every command step of that item receives
+  `CAD_CI_VERIFICATION_WHEEL` as the exact existing wheel path inside its
+  target-private dependency snapshot;
+- the consumer does not know the internal package item id or package output
+  layout;
+- changing the exact root verification package pin invalidates the requesting
+  item through normal dependency/SCons semantics;
+- builders that omit the capability do not gain the dependency or wheel;
+- a post-build Pages publication builder cannot request the capability because
+  it executes outside the SCons item dependency graph.
+
+This capability is dependency wiring only. Verification semantics continue to
+belong to `lib.py.cad.verification`; repository builders remain responsible
+for their own domain runtime and for how the wheel is mounted or placed on
+`PYTHONPATH`.
