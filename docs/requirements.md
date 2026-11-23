@@ -1225,3 +1225,67 @@ For `direct_dependents`:
 
 The capability must preserve jobs>1 isolation, CacheDir correctness, CURRENT
 classification, deterministic evidence and normal dependency ordering.
+## 30. First-class reusable CAD verification integration
+
+CAD-CI may compose a built-in CAD builder with reusable verification without
+a consumer-owned verification command.
+
+Repository configuration supplies one exact released verification-library pin
+under root `verification.package`: repository, semantic version and exact
+40-character commit SHA. CAD-CI materializes one wheel for the repository graph
+and records provenance. It does not install the package into the host CAD-CI
+environment and does not bake it into a runtime image.
+
+An item or root item template may add a `verification` mapping. The initial
+contract is:
+
+- `adapter: mesh-geometry`;
+- `definition`: one item-relative regular schema-1 geometry-contract file;
+- optional `id`; otherwise the CAD-CI item ID is used and must satisfy the
+  verification library's lowercase identifier grammar.
+
+### Ownership
+
+- CAD-CI owns configuration validation, SCons dependencies, package
+  materialization, runtime injection and build/verify ordering.
+- `lib.py.cad.verification` owns geometry-contract interpretation,
+  verification semantics and report generation.
+- consumers own only model-specific verification definition data.
+
+CAD-CI must not duplicate geometry fields, tolerances or pass/fail logic.
+
+### Lowering and output
+
+For the initial built-in builders using the `reference` runtime:
+
+1. CAD-CI creates at most one internal verification-package producer;
+2. the shared reference runtime producer depends on it when any processed
+   consumer in that runtime uses verification;
+3. the existing runtime builds each active model;
+4. verified models immediately invoke the released verification library inside
+   that same runtime process/container;
+5. the shared producer writes `items/<item-path>/model.stl` and
+   `items/<item-path>/verification/verification.json` plus any verification
+   artifacts;
+6. the public item projects `model.stl` in step `build` and the
+   `verification` directory in step `verify` from the same shared producer.
+
+A verification failure makes the shared runtime target fail while later model
+rows remain observable in the aggregate batch report.
+
+### Performance
+
+- compatible N-model build+verification remains one CAD runtime/container start;
+- the verification wheel is one SCons dependency target, never one per model;
+- no `pip install` occurs inside the CAD runtime;
+- cached/current shared runtime targets do not start Docker;
+- configuration performs only direct definition-file validation, not another
+  repository scan;
+- normal library tests prove graph, manifest and invocation cardinality with
+  fakes; real runtime acceptance remains in `tool.cad.ci.test`.
+
+### Initial compatibility boundary
+
+The first implementation supports `mesh-geometry` only for built-in builders
+whose runtime role is `reference`. Other adapters or runtime roles require an
+explicit later contract rather than consumer-local command glue.
