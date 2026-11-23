@@ -437,6 +437,60 @@ class BuiltinBuilderBatchTests(unittest.TestCase):
                 ["pass", "pass", "pass"],
             )
 
+    def test_cadquery_assembly_uses_model_owned_stl_export(self):
+        """Acceptance Case 2C: CadQuery Assembly uses its supported export path."""
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source = root / "assembly" / "model.py"
+            output = root / "out" / "assembly" / "model.stl"
+            _write(
+                source,
+                "from cadquery import Assembly\n"
+                "model = Assembly()\n",
+            )
+
+            export_calls = []
+            fallback_calls = []
+
+            class FakeAssembly:
+                """Faithful Assembly shape: STL export is owned by the model."""
+
+                def export(self, path, *, exportType=None):
+                    export_calls.append((path, exportType))
+                    Path(path).write_text("assembly\n", encoding="utf-8")
+
+            cadquery = types.ModuleType("cadquery")
+            cadquery.Assembly = FakeAssembly
+            cadquery.exporters = types.SimpleNamespace(
+                export=lambda model, path: fallback_calls.append((model, path))
+            )
+
+            manifest = root / "manifest.json"
+            report = root / "report.json"
+            manifest.write_text(
+                json.dumps(
+                    {
+                        "models": [
+                            {
+                                "item_id": "assembly",
+                                "builder": "cadquery",
+                                "source": str(source),
+                                "output": str(output),
+                            }
+                        ]
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            with patch.dict(sys.modules, {"cadquery": cadquery}):
+                self.assertEqual(execute_manifest(manifest, report), 0)
+
+            self.assertEqual(output.read_text(encoding="utf-8"), "assembly\n")
+            self.assertEqual(export_calls, [(str(output), "STL")])
+            self.assertEqual(fallback_calls, [])
+
     def test_runtime_executes_all_models_and_writes_per_model_results(self):
         """One runtime process executes and reports every manifest model."""
 
