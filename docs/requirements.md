@@ -1325,3 +1325,23 @@ container.
 Normal library tests prove interpreter-process cardinality structurally with a
 fake process adapter. Real interpreter/runtime compatibility is proven only by
 the released-stack acceptance repository.
+
+## 32. Host-owned runtime output bind mounts
+
+A shared built-in CAD runtime writes outputs into a host bind mount that is
+later deleted/rebuilt by the host SCons process.
+
+The container must therefore execute with the caller's numeric POSIX UID:GID so
+files and directories created below `CAD_CI_OUTPUT` remain host-removable.
+
+The runtime contract must:
+
+- pass exactly one `docker run --user <uid>:<gid>`;
+- set a writable `HOME` for the numeric user;
+- keep `/repo` read-only and `/output` writable;
+- preserve one-container batching and isolated-engine grouping;
+- require no recursive chmod/chown cleanup after the container exits;
+- fail explicitly on platforms that cannot supply a POSIX UID/GID rather than
+  silently falling back to root-owned output.
+
+This ownership rule is runtime plumbing only and changes no consumer YAML/API.

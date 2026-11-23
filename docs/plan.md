@@ -2,43 +2,51 @@
 
 Current source of truth for unfinished work in `lib.py.cad.ci` (2026-11-23).
 
-## Accepted implementation baseline
+## Accepted release baseline
 
-- #114 runtime-owned build123d interpreter batching is merged at
-  `42d884c09ca08e9f2891fa0ae0792852266d0c19` and green on main;
-- `lib.py.cad.verification v0.16.0` is immutable at
-  `c7c145b7be0c602724e8cca874ef29990baaad1e`;
-- external acceptance #240 remains the release/real-runtime gate before Forge
-  adoption.
+- `lib.py.cad.ci v0.17.1` is immutable at
+  `00d0a763413650339945ca2d9bcfa4265e8dff35`;
+- `tool.cad.ci v0.33.1` is immutable at
+  `e319979fd6352ca6be2f95ff7227715f00253e96`;
+- build123d now executes successfully through the runtime-owned isolated
+  interpreter;
+- external acceptance #240 exposed one remaining bind-mount ownership bug on
+  the subsequent shared-runtime rebuild.
 
 ## Current work
 
-### #116 — publish immutable 0.17.1
+### #118 — preserve host ownership of shared runtime outputs
 
-**Now.**
+**Now / release blocker for #106 and acceptance #240.**
 
-Promote the #114 compatibility fix as a patch release:
+The cold real-runtime build succeeds. A later verification-definition rebuild
+fails before Docker starts because the prior container created root-owned
+`items/` output under the host bind mount.
 
-1. VERSION, pyproject.toml and CHANGELOG.md declare 0.17.1;
-2. release PR installed-wheel/SCons CI is green;
-3. merge the release PR;
-4. verify `v0.17.1` targets the exact tested release commit;
-5. repin the thin tool with no new tool-owned behavior;
-6. rerun external acceptance #240 on the exact patch stack.
+Fix only the owner-layer runtime plumbing:
+
+1. run the shared Docker container with the host numeric UID:GID;
+2. set a writable container HOME;
+3. keep one Docker container and current engine batching unchanged;
+4. add structural command-shape coverage;
+5. publish a patch release;
+6. repin the thin tool and rerun the same #240 cold/current/rebuild acceptance.
+
+Evidence: tool.cad.ci.test PR #241 / Actions run `45187103416`.
 
 ### #106 — extract reusable batched CAD builders from Forge
 
-**Blocked on #116 + #240.**
+**Blocked on #118 patch release + #240 acceptance.**
 
-After the real released runtime passes black-box acceptance, migrate Forge away
-from duplicated reference batch/package wiring.
+Resume Forge migration only after the released generic stack passes the full
+cold/current/rebuild black-box case.
 
 ## Open issue assessment
 
 | Issue | Status | Next |
 | --- | --- | --- |
-| #116 Publish 0.17.1 runtime interpreter patch | **now** | Finish immutable release gate. |
-| #106 Extract reusable batched CAD builders from Forge | **blocked by #116/#240** | Resume Forge migration after external acceptance. |
+| #118 Preserve host ownership of shared CAD runtime outputs | **now** | Implement, patch release, repin tool, rerun #240. |
+| #106 Extract reusable batched CAD builders from Forge | **blocked by #118/#240** | Resume Forge migration after external acceptance. |
 | #89 Align historical changelog | later / docs-only | Apply shared changelog presentation only. |
 
 ## Performance boundary
@@ -46,7 +54,6 @@ from duplicated reference batch/package wiring.
 - SCons remains the only rebuild/reuse engine;
 - one compatible N-model build+verification batch means one Docker runtime
   start;
-- isolated engines use at most one process per active engine/interpreter group,
-  never per model;
+- isolated engines use at most one process per active engine/interpreter group;
 - current/cache results avoid Docker and engine-process startup entirely;
-- real runtime compatibility remains an external acceptance concern.
+- output ownership must not require post-run recursive filesystem passes.

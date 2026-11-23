@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 import sys
 import tempfile
@@ -321,6 +322,13 @@ class BuiltinBuilderBatchTests(unittest.TestCase):
                 if len(command) >= 2 and command[:2] == ["docker", "run"]
             ]
             self.assertEqual(len(docker_runs), 1)
+            command = docker_runs[0]
+            user_index = command.index("--user")
+            self.assertEqual(
+                command[user_index + 1],
+                f"{os.getuid()}:{os.getgid()}",
+            )
+            self.assertIn("HOME=/tmp", command)
 
             manifest = json.loads(
                 (output / "batch-manifest.json").read_text(encoding="utf-8")
