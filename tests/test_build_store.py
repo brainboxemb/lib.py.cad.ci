@@ -139,7 +139,7 @@ class BuildStoreTests(unittest.TestCase):
         self.item_b = configured_item("cases/item-b", "item-b")
 
     def test_build_store_uses_current_scons_engine_schema(self):
-        from cad_ci import build_store
+        from cad_ci.publication import build_store
         from cad_ci import scons_engine
 
         self.assertEqual(
