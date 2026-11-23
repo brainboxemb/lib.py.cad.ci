@@ -185,6 +185,7 @@ def publish_durable_scope(
     state: DurableScopeState,
     source_sha: str,
     source_ref: str,
+    build_branch: str = "build",
     remote: str = "origin",
     retries: int = 3,
 ) -> str:
@@ -265,6 +266,7 @@ def publish_durable_scope(
         scope=publish_scope,
         scope_name=scope_name,
         message=f"build: {scope} {source_sha}",
+        branch=build_branch,
         remote=remote,
         retries=retries,
         source_ref=source_ref,
@@ -322,6 +324,7 @@ def publish_durable_pages(
     source_sha: str,
     source_ref: str,
     build_commit: str,
+    pages_branch: str = "gh-pages",
     remote: str = "origin",
     retries: int = 3,
 ) -> str | None:
@@ -373,6 +376,7 @@ def publish_durable_pages(
             name=name,
             preserve_subtrees=preserve,
             message=f"pages: {scope} {source_sha}",
+            branch=pages_branch,
             remote=remote,
             retries=retries,
             source_ref=source_ref,
