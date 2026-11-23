@@ -25,6 +25,13 @@ repositories.
 SCons is the only generic rebuild/reuse engine. Do not add a parallel custom
 fingerprint, dependency execution or reuse engine.
 
+Performance is a first-class architectural constraint. Preserve shared batch
+execution, SCons current/cache behavior and amortized runtime/container startup.
+Do not accept a cleanup that turns one compatible N-model batch into N process
+or container starts, adds duplicate repository planning/scanning, or moves
+avoidable work onto the hot path. Prefer deterministic structural performance
+tests (for example runtime-start cardinality) over fragile wall-clock limits.
+
 ## Repository plan
 
 Current unfinished repository work lives in `docs/plan.md`.
