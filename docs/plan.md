@@ -27,15 +27,18 @@ package, test and modify safely.
 
 Required foundation:
 
-1. builder-owned code lives under `cad_ci/builders/`;
-2. external process execution crosses one thin `cad_ci/execution/` adapter;
-3. package discovery ships those subpackages in the wheel;
-4. `docs/manual/` contains copy-ready configuration templates;
-5. tests document the contract they protect and use owned fakes/adapters;
-6. performance remains a first-class invariant: one compatible N-model batch
+1. root package is reduced to the small public/core surface
+   (`config.py`, `context.py`, `model.py`);
+2. implementation ownership is explicit under `builders/`, `repository/`,
+   `scons/`, `execution/` and `publication/`;
+3. external process execution crosses one thin `execution/process.py` adapter;
+4. package discovery ships all subpackages in the wheel;
+5. `docs/manual/` contains copy-ready configuration templates;
+6. tests document the contract they protect and use owned fakes/adapters;
+7. performance remains a first-class invariant: one compatible N-model batch
    means one runtime/container start, current/cache paths do not start the
    runtime, and no second planner/cache/execution engine is introduced;
-7. the hierarchy must reduce architectural reconstruction work for future
+8. the hierarchy must reduce architectural reconstruction work for future
    maintainers/agents rather than add abstraction layers.
 
 ### #106 — extract reusable batched CAD builders from Forge
@@ -96,7 +99,7 @@ Execution order:
 
 | Issue | Status | Next |
 | --- | --- | --- |
-| #108 Harden library package foundation before further CAD builder work | **now** | Establish ownership hierarchy, process boundary, packaging/manual/test contracts and performance invariants. |
+| #108 Harden library package foundation before further CAD builder work | **now** | Complete canonical package hierarchy, process boundary, packaging/manual/test contracts and performance invariants. |
 | #106 Extract reusable batched CAD builders from Forge | **blocked by #108** | Resume only after the library foundation PR is merged and green. |
 | #89 Align historical changelog | **later / docs-only** | Apply shared changelog presentation without runtime/API changes. |
 
