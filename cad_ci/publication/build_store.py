@@ -19,8 +19,8 @@ import shutil
 import tempfile
 from typing import Iterable
 
-from .model import Item
-from .scons_engine import ENGINE_SCHEMA
+from ..model import Item
+from ..scons.engine import ENGINE_SCHEMA
 
 
 MANIFEST = "build.json"

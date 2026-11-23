@@ -16,7 +16,7 @@ from pathlib import Path
 
 from .config import load_repository
 from .model import Item
-from .scons_bundle import (
+from .scons.bundle import (
     BundleError,
     bundle_sha256,
     outputs_match_bundle,

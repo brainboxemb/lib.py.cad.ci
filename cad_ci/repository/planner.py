@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from .model import Item
+from ..model import Item
 from .paths import matches
 
 

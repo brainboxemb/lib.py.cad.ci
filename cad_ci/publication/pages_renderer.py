@@ -13,8 +13,8 @@ from pathlib import Path
 import subprocess
 
 from .build_store import BuildStoreError
-from .model import PagesPublication
-from .scons_bundle import BundleError, output_snapshot
+from ..model import PagesPublication
+from ..scons.bundle import BundleError, output_snapshot
 
 
 def render_pages_builder(
