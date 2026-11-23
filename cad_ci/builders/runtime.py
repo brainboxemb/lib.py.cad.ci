@@ -69,25 +69,73 @@ def execute_manifest(manifest_path: Path, report_path: Path) -> int:
         builder = str(row.get("builder", ""))
         source = Path(str(row.get("source", "")))
         output = Path(str(row.get("output", "")))
+        build_status = "error"
+        verification_status = None
+        status = "error"
+        error = None
         try:
             model = _execute_source(source)
             _export(builder, model, output)
+            build_status = "pass"
             status = "pass"
-            error = None
+
+            verification = row.get("verification")
+            if verification is not None:
+                if not isinstance(verification, dict):
+                    raise RuntimeError(
+                        f"{item_id}: verification manifest row must be an object"
+                    )
+                from cad_ci.verification.runtime import run_verification
+
+                report = run_verification(
+                    adapter=str(verification.get("adapter", "")),
+                    model_output=output,
+                    definition=Path(
+                        str(verification.get("definition", ""))
+                    ),
+                    output_dir=Path(
+                        str(verification.get("output", ""))
+                    ),
+                    verification_id=str(
+                        verification.get("verification_id", "")
+                    ),
+                )
+                verification_status = str(report.get("status", "error"))
+                if verification_status not in {"pass", "fail", "error"}:
+                    verification_status = "error"
+                if verification_status != "pass":
+                    failed = True
+                    status = verification_status
+                    first = next(
+                        (
+                            check
+                            for check in report.get("checks", ())
+                            if isinstance(check, dict)
+                            and check.get("status") in {"fail", "error"}
+                        ),
+                        None,
+                    )
+                    if first is not None:
+                        error = str(first.get("error") or "") or None
         except Exception as exc:
             failed = True
             status = "error"
+            if build_status == "pass" and verification_status is None:
+                verification_status = "error"
             error = "".join(
                 traceback.format_exception_only(type(exc), exc)
             ).strip()
             print(
-                f"{item_id} {builder} build: error: {error}",
+                f"{item_id} {builder} runtime: error: {error}",
                 flush=True,
             )
+
         results.append(
             {
                 "item_id": item_id,
                 "builder": builder,
+                "build_status": build_status,
+                "verification_status": verification_status,
                 "status": status,
                 "error": error,
             }
