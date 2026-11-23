@@ -166,10 +166,7 @@ class VerificationGraphTests(unittest.TestCase):
             )
             self.assertEqual(
                 specs["a-reference:verify"]["dependencies"],
-                [
-                    "a-reference:build",
-                    "cad-ci-runtime-reference:build",
-                ],
+                ["a-reference:build"],
             )
 
     def test_invalid_verification_configuration_fails_during_load(self):
