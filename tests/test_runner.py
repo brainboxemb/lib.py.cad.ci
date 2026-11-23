@@ -7,9 +7,9 @@ import tempfile
 import unittest
 
 from cad_ci.config import load_repository
-from cad_ci.git import changed_files
-from cad_ci.planner import affected_items
-from cad_ci.runner import RunError, run_repository
+from cad_ci.repository.git import changed_files
+from cad_ci.repository.planner import affected_items
+from cad_ci.execution.runner import RunError, run_repository
 
 
 def _write(path: Path, text: str) -> None:

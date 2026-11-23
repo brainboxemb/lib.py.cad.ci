@@ -1,0 +1,10 @@
+# ci/builders/repository-model/builder.yml
+# Executable behavior for one repository-owned builder alias.
+
+schema: 1
+
+steps:
+  - id: build
+    run: 'python "$CAD_CI_BUILDER_PATH/build.py"'
+    outputs:
+      - model.stl

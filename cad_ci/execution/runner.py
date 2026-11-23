@@ -9,8 +9,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from .model import Item
-from .scons_engine import (
+from ..model import Item
+from ..scons.engine import (
     RunRequest,
     SConsRunError,
     resolve_request,

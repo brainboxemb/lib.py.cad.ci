@@ -3,7 +3,7 @@ import subprocess
 import tempfile
 import unittest
 
-from cad_ci.git import changed_files
+from cad_ci.repository.git import changed_files
 
 
 class GitTests(unittest.TestCase):

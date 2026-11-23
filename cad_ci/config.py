@@ -18,7 +18,7 @@ from typing import Any
 
 import yaml
 
-from .builder_catalog import (
+from .builders.catalog import (
     BUILTIN_BUILDERS,
     projection_step,
     runtime_batch_id,

@@ -1,0 +1,8 @@
+# Item using the library-owned build123d builder.
+
+id: example-build123d
+builder: build123d
+
+watch:
+  item:
+    - model.py

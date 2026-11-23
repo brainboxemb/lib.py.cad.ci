@@ -1,3 +1,4 @@
+from importlib.metadata import files as distribution_files
 from importlib.util import module_from_spec, spec_from_file_location
 from pathlib import Path
 import subprocess
@@ -96,6 +97,39 @@ class ReleaseTests(unittest.TestCase):
             "needs.test.outputs.change_scope != 'docs-only'",
             workflow,
         )
+
+    def test_installed_distribution_contains_owned_subpackages(self):
+        """Installed release artifact must contain owned package subpackages."""
+
+        installed = distribution_files("brainboxemb-cad-ci-lib")
+        self.assertIsNotNone(installed)
+        names = {path.as_posix() for path in installed or ()}
+        expected = {
+            "cad_ci/builders/__init__.py",
+            "cad_ci/builders/catalog.py",
+            "cad_ci/builders/batch.py",
+            "cad_ci/builders/runtime.py",
+            "cad_ci/repository/__init__.py",
+            "cad_ci/repository/git.py",
+            "cad_ci/repository/paths.py",
+            "cad_ci/repository/planner.py",
+            "cad_ci/scons/__init__.py",
+            "cad_ci/scons/bundle.py",
+            "cad_ci/scons/driver.py",
+            "cad_ci/scons/engine.py",
+            "cad_ci/execution/__init__.py",
+            "cad_ci/execution/process.py",
+            "cad_ci/execution/runner.py",
+            "cad_ci/execution/timing.py",
+            "cad_ci/publication/__init__.py",
+            "cad_ci/publication/build_store.py",
+            "cad_ci/publication/durable.py",
+            "cad_ci/publication/git_publish.py",
+            "cad_ci/publication/pages.py",
+            "cad_ci/publication/pages_renderer.py",
+            "cad_ci/verification/__init__.py",
+        }
+        self.assertTrue(expected.issubset(names), expected - names)
 
     def test_changelog_section_must_match(self):
         with tempfile.TemporaryDirectory() as tmp:

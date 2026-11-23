@@ -9,8 +9,8 @@ from unittest.mock import patch
 
 from cad_ci.config import load_repository
 from cad_ci.context import ContextError, current_context
-from cad_ci.scons_bundle import bundle_sha256
-from cad_ci.scons_engine import (
+from cad_ci.scons.bundle import bundle_sha256
+from cad_ci.scons.engine import (
     resolve_request,
     run_scons,
     target_specs,

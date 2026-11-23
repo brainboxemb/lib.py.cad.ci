@@ -5,7 +5,7 @@ import json
 import tempfile
 import unittest
 
-from cad_ci.pages import (
+from cad_ci.publication.pages import (
     Page,
     PagesError,
     build_site,

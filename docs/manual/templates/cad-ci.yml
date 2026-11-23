@@ -1,0 +1,19 @@
+# Root CAD-CI repository configuration.
+# Replace the example runtime image with the exact non-latest tag or digest
+# accepted for this consumer repository.
+
+schema: 1
+
+defaults:
+  timeout_seconds: 300
+
+items:
+  - models/*
+
+runtimes:
+  reference: ghcr.io/owner/cad-reference:v1.2.3
+
+# Optional repository-owned builders. Built-in names such as build123d and
+# cadquery are library-owned and must not be declared here.
+builders:
+  repository-model: ci/builders/repository-model

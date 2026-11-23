@@ -26,7 +26,7 @@ from SCons.Script import (
     Value,
 )
 
-from cad_ci.scons_bundle import (
+from cad_ci.scons.bundle import (
     BundleError,
     bundle_sha256,
     copy_dependency_outputs,
@@ -34,7 +34,7 @@ from cad_ci.scons_bundle import (
     remove_outputs,
     write_bundle,
 )
-from cad_ci.timing import utc_now
+from cad_ci.execution.timing import utc_now
 
 
 ROOT = Path.cwd().resolve()

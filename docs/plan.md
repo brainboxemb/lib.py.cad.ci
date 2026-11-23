@@ -18,10 +18,55 @@ do not reimplement them.
 
 ## Current work
 
+### #108 — harden library package foundation
+
+**Now / prerequisite for #106.**
+
+Before adding more builder behavior, make the library itself easier to navigate,
+package, test and modify safely.
+
+Required foundation:
+
+1. root package is reduced to the small public/core surface
+   (`config.py`, `context.py`, `model.py`);
+2. implementation ownership is explicit under `builders/`, `repository/`,
+   `scons/`, `execution/`, `verification/` and `publication/`;
+3. external process execution crosses one thin `execution/process.py` adapter;
+4. package discovery ships all subpackages in the wheel;
+5. `docs/manual/` contains copy-ready configuration templates;
+6. tests document the contract they protect and use owned fakes/adapters;
+7. performance remains a first-class invariant: one compatible N-model batch
+   means one runtime/container start, current/cache paths do not start the
+   runtime, and no second planner/cache/execution engine is introduced;
+8. the hierarchy must reduce architectural reconstruction work for future
+   maintainers/agents rather than add abstraction layers.
+
+### #110 — compose generic builders with reusable CAD verification
+
+**Next after #108 / prerequisite for completing #106.**
+
+Keep root item templates as the consumer-owned profile/configuration layer.
+A template may select a reusable builder plus a first-class declarative
+`verification` contract.
+
+Ownership is explicit:
+
+- `lib.py.cad.ci` owns the SCons graph, batching, builder/runtime integration,
+  declarative verification configuration and the thin `cad_ci/verification/`
+  integration adapter;
+- `lib.py.cad.verification` owns reusable verification mechanics and
+  CAD-engine-specific verification adapters;
+- Forge/consumer repositories own only model-specific verification data such as
+  expected values, tolerances, views, mutations and reference geometry.
+
+CAD-CI lowers build -> verify into the same normal SCons graph and calls the
+existing verification library. Forge must not retain generic verification
+scripts/batch glue. Shared-batch runtime cardinality and current/cache behavior
+must remain unchanged.
 
 ### #106 — extract reusable batched CAD builders from Forge
 
-**Implementation in progress.**
+**Blocked on #108 and #110.**
 
 Forge already proves the required execution shape: one normal CAD-CI/SCons
 graph, one shared producer, signature-safe active dependent context, one runtime
@@ -77,8 +122,26 @@ Execution order:
 
 | Issue | Status | Next |
 | --- | --- | --- |
-| #106 Extract reusable batched CAD builders from Forge | **implementation in progress** | Finish tests/PR, release owner stack, then migrate Forge #740. |
+| #108 Harden library package foundation before further CAD builder work | **now** | Complete canonical package hierarchy, process boundary, packaging/manual/test contracts and performance invariants. |
+| #110 Compose generic CAD builders with reusable CAD verification | **next after #108** | Add first-class declarative verification wiring from CAD-CI into lib.py.cad.verification without Forge-owned generic scripts. |
+| #106 Extract reusable batched CAD builders from Forge | **blocked by #108/#110** | Resume after foundation and builder+verification composition are accepted. |
 | #89 Align historical changelog | **later / docs-only** | Apply shared changelog presentation without runtime/API changes. |
+
+## Performance boundary
+
+Performance is part of the architecture, not a later optimization pass.
+
+- SCons remains the only rebuild/reuse engine;
+- compatible work is batched to amortize runtime startup;
+- no per-model Docker/process startup is acceptable;
+- cache/current results must avoid runtime startup entirely;
+- cleanup must not introduce repeated planning/repository scans;
+- deterministic structural assertions are preferred over fragile wall-clock
+  thresholds in normal CI;
+- development feedback time is also a performance constraint: prove contracts
+  at the cheapest reliable layer and keep Docker/real-engine/released-stack
+  checks out of the normal library loop unless that boundary itself is under
+  test.
 
 ## Boundary
 

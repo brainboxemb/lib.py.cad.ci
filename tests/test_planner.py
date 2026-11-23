@@ -3,7 +3,7 @@ import tempfile
 import unittest
 
 from cad_ci.config import load_repository
-from cad_ci.planner import affected_items, build_plan
+from cad_ci.repository.planner import affected_items, build_plan
 
 
 class PlannerTests(unittest.TestCase):

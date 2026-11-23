@@ -24,15 +24,15 @@ from .build_store import (
     update_main,
     update_named,
 )
-from .config import load_repository, load_repository_config
-from .git import changed_files
+from ..config import load_repository, load_repository_config
+from ..repository.git import changed_files
 from .git_publish import (
     materialize_generated_branch,
     publish_build_scope,
     publish_pages,
 )
 from .pages_renderer import render_pages_builder
-from .planner import affected_items
+from ..repository.planner import affected_items
 
 
 _SHA = re.compile(r"^[0-9a-f]{40}$")

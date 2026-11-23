@@ -16,15 +16,15 @@ import shutil
 import subprocess
 from typing import Any
 
-from .model import Item, Step
-from .paths import PathDiscoveryError, files_for_patterns, source_inventory
-from .scons_bundle import (
+from ..model import Item, Step
+from ..repository.paths import PathDiscoveryError, files_for_patterns, source_inventory
+from .bundle import (
     BundleError,
     bundle_sha256,
     materialize_bundle,
     read_bundle_manifest,
 )
-from .timing import utc_now
+from ..execution.timing import utc_now
 
 
 ENGINE_SCHEMA = 5
@@ -915,7 +915,7 @@ def run_scons(
 
     shutil.rmtree(repo / DEPENDENCY_RUN_ROOT, ignore_errors=True)
     manifest = write_manifest(repo, items, request, jobs=jobs)
-    driver = Path(__file__).with_name("scons_driver.py").resolve()
+    driver = Path(__file__).with_name("driver.py").resolve()
     completed = subprocess.run(
         [
             "scons",

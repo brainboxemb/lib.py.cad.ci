@@ -11,7 +11,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
-from .model import DependencyCopy, Step
+from ..model import DependencyCopy, Step
 
 
 @dataclass(frozen=True)
@@ -92,7 +92,7 @@ def runtime_batch_step(
         run=(
             "python",
             "-m",
-            "cad_ci.cad_builder",
+            "cad_ci.builders.batch",
             "batch",
             "--runtime",
             role,

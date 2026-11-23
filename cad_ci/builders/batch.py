@@ -1,4 +1,4 @@
-"""Host-side execution for built-in generic CAD builder batches."""
+"""Host-side orchestration for built-in generic CAD builder batches."""
 
 from __future__ import annotations
 
@@ -6,14 +6,19 @@ import argparse
 import json
 import os
 from pathlib import Path, PurePosixPath
-import subprocess
 import sys
 from typing import Mapping
 
-from .builder_catalog import (
+from .catalog import (
     BUILTIN_BUILDERS,
     RUNTIME_BATCH_CONTRACTS,
     runtime_catalog_signature,
+)
+
+from ..execution.process import (
+    DEFAULT_PROCESS_RUNNER,
+    ProcessExecutionError,
+    ProcessRunner,
 )
 
 
@@ -81,7 +86,7 @@ def build_manifest(
             f"{catalog!r} != {expected_catalog!r}"
         )
 
-    from .config import load_repository
+    from ..config import load_repository
 
     repo = Path(_required(env, "CAD_CI_REPO")).resolve()
     output = Path(_required(env, "CAD_CI_OUTPUT")).resolve()
@@ -160,10 +165,12 @@ def run_batch(
     catalog: str,
     *,
     environ: Mapping[str, str] | None = None,
+    process: ProcessRunner | None = None,
 ) -> int:
-    """Execute all active compatible models in one runtime container process."""
+    """Execute one shared runtime batch through the external-process boundary."""
 
     env = os.environ if environ is None else environ
+    runner = DEFAULT_PROCESS_RUNNER if process is None else process
     manifest, report, image = build_manifest(
         runtime,
         contract,
@@ -174,8 +181,8 @@ def run_batch(
     output = Path(_required(env, "CAD_CI_OUTPUT")).resolve()
     package_dir = Path(__file__).resolve().parent
 
-    subprocess.run(["docker", "pull", image], cwd=repo, check=True)
-    completed = subprocess.run(
+    runner.run(["docker", "pull", image], cwd=repo, check=True)
+    completed = runner.run(
         [
             "docker",
             "run",
@@ -186,12 +193,12 @@ def run_batch(
             "-v",
             f"{output}:/output",
             "-v",
-            f"{package_dir}:/cad-ci-builder:ro",
+            f"{package_dir}:/cad-ci-builders:ro",
             "-w",
             "/repo",
             image,
             "python",
-            "/cad-ci-builder/cad_builder_runtime.py",
+            "/cad-ci-builders/runtime.py",
             "--manifest",
             f"/output/{manifest.name}",
             "--report",
@@ -217,7 +224,7 @@ def main(argv: list[str] | None = None) -> int:
     try:
         if args.operation == "batch":
             return run_batch(args.runtime, args.contract, args.catalog)
-    except (CadBuilderError, OSError, subprocess.CalledProcessError) as exc:
+    except (CadBuilderError, ProcessExecutionError) as exc:
         print(f"CAD CI built-in builder error: {exc}", file=sys.stderr)
         return 2
     return 2
