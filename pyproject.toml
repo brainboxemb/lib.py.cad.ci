@@ -9,5 +9,5 @@ description = "Reusable Python library for BrainboxEmb CAD CI"
 requires-python = ">=3.11"
 dependencies = ["PyYAML>=6.0", "SCons==4.11.1"]
 
-[tool.setuptools]
-packages = ["cad_ci"]
+[tool.setuptools.packages.find]
+include = ["cad_ci*"]

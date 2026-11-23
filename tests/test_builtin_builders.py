@@ -4,17 +4,17 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-import subprocess
 import sys
 import tempfile
 import types
 import unittest
 from unittest.mock import patch
 
-from cad_ci.builder_catalog import runtime_catalog_signature
-from cad_ci.cad_builder import run_batch
-from cad_ci.cad_builder_runtime import execute_manifest
+from cad_ci.builders.catalog import runtime_catalog_signature
+from cad_ci.builders.batch import run_batch
+from cad_ci.builders.runtime import execute_manifest
 from cad_ci.config import ConfigError, load_repository
+from cad_ci.execution.process import ProcessResult
 from cad_ci.scons_engine import resolve_request, write_manifest
 
 
@@ -23,6 +23,19 @@ def _write(path: Path, text: str) -> None:
 
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(text, encoding="utf-8")
+
+
+class RecordingProcessRunner:
+    """Fake the owned process boundary and retain commands for assertions."""
+
+    def __init__(self) -> None:
+        self.calls: list[tuple[list[str], Path | None, bool]] = []
+
+    def run(self, command, *, cwd=None, check=False):
+        """Record one external-process request without starting a process."""
+
+        self.calls.append((list(command), cwd, check))
+        return ProcessResult(returncode=0)
 
 
 class BuiltinBuilderConfigTests(unittest.TestCase):
@@ -247,29 +260,24 @@ class BuiltinBuilderBatchTests(unittest.TestCase):
                 "CAD_CI_ACTIVE_DEPENDENTS_JSON": '["a","b"]',
             }
 
-            # The contract is one runtime start for the active batch; Docker
-            # itself is not under test here.
-            calls = []
-
-            def fake_run(command, **kwargs):
-                calls.append(list(command))
-                return subprocess.CompletedProcess(command, 0)
-
-            with patch("cad_ci.cad_builder.subprocess.run", side_effect=fake_run):
-                self.assertEqual(
-                    run_batch(
-                        "reference",
-                        1,
-                        runtime_catalog_signature("reference"),
-                        environ=env,
-                    ),
-                    0,
-                )
+            # Runtime-start cardinality is the performance contract here;
+            # Docker itself belongs to outer released-stack acceptance.
+            process = RecordingProcessRunner()
+            self.assertEqual(
+                run_batch(
+                    "reference",
+                    1,
+                    runtime_catalog_signature("reference"),
+                    environ=env,
+                    process=process,
+                ),
+                0,
+            )
 
             docker_runs = [
-                call
-                for call in calls
-                if len(call) >= 2 and call[:2] == ["docker", "run"]
+                command
+                for command, _cwd, _check in process.calls
+                if len(command) >= 2 and command[:2] == ["docker", "run"]
             ]
             self.assertEqual(len(docker_runs), 1)
 
