@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.17.2
+
+- run the shared built-in CAD container as the host numeric UID:GID so files
+  written through the bind-mounted output tree remain removable by host SCons;
+- set `HOME=/tmp` for the numeric container user while preserving the read-only
+  repository mount and writable output mount;
+- keep one-container runtime batching, isolated build123d engine grouping and
+  reusable verification behavior unchanged;
+- fix repeated shared-runtime rebuilds after a verification-definition change
+  without adding chmod/chown repair passes or consumer workarounds.
+
 ## 0.17.1
 
 - fix the built-in build123d runtime adapter to use the immutable reference
