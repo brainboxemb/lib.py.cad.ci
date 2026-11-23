@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.17.0
+
+- add first-class declarative reusable verification to built-in CAD builders while keeping verification semantics in `lib.py.cad.verification`;
+- materialize one exact released verification wheel as a shared SCons dependency with version/digest provenance and inject it read-only into the existing runtime without installation;
+- run model export and `mesh-geometry` verification inside the same compatible reference runtime/container batch, preserving one runtime start for N active models;
+- project `model.stl` and `verification/` independently through the existing dependency-copy mechanism;
+- include effective active-dependent configuration in shared-batch target identity so root-template behavior changes invalidate only the relevant batch;
+- bump SCons engine/report/step-evidence schemas for the new freshness contract while retaining SCons as the only rebuild/cache engine.
+
 ## 0.16.0
 
 - add built-in generic `build123d` and `cadquery` builders while keeping
