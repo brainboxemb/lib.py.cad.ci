@@ -491,6 +491,67 @@ class BuiltinBuilderBatchTests(unittest.TestCase):
             self.assertEqual(export_calls, [(str(output), "STL")])
             self.assertEqual(fallback_calls, [])
 
+    def test_cadquery_non_assembly_with_export_method_uses_normal_exporter(self):
+        """A callable export method alone must not select the Assembly path."""
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source = root / "workplane" / "model.py"
+            output = root / "out" / "workplane" / "model.stl"
+            _write(
+                source,
+                "from cadquery import Workplane\n"
+                "model = Workplane()\n",
+            )
+
+            model_export_calls = []
+            fallback_calls = []
+
+            class FakeAssembly:
+                pass
+
+            class FakeWorkplane:
+                def export(self, *args, **kwargs):
+                    model_export_calls.append((args, kwargs))
+                    raise AssertionError("Workplane model-owned export must not be used")
+
+            cadquery = types.ModuleType("cadquery")
+            cadquery.Assembly = FakeAssembly
+            cadquery.Workplane = FakeWorkplane
+
+            def fallback(model, path):
+                fallback_calls.append((model, path))
+                Path(path).write_text("workplane\n", encoding="utf-8")
+
+            cadquery.exporters = types.SimpleNamespace(export=fallback)
+
+            manifest = root / "manifest.json"
+            report = root / "report.json"
+            manifest.write_text(
+                json.dumps(
+                    {
+                        "models": [
+                            {
+                                "item_id": "workplane",
+                                "builder": "cadquery",
+                                "source": str(source),
+                                "output": str(output),
+                            }
+                        ]
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            with patch.dict(sys.modules, {"cadquery": cadquery}):
+                self.assertEqual(execute_manifest(manifest, report), 0)
+
+            self.assertEqual(output.read_text(encoding="utf-8"), "workplane\n")
+            self.assertEqual(model_export_calls, [])
+            self.assertEqual(len(fallback_calls), 1)
+            self.assertIsInstance(fallback_calls[0][0], FakeWorkplane)
+            self.assertEqual(fallback_calls[0][1], str(output))
+
     def test_runtime_executes_all_models_and_writes_per_model_results(self):
         """One runtime process executes and reports every manifest model."""
 
