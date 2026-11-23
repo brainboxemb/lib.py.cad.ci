@@ -100,38 +100,21 @@ class ReleaseTests(unittest.TestCase):
             workflow,
         )
 
-    def test_built_wheel_contains_owned_subpackages(self):
-        """Release artifact discovery must include owned package subpackages."""
+    def test_installed_distribution_contains_owned_subpackages(self):
+        """Installed release artifact must contain owned package subpackages."""
 
-        with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            project = root / "project"
-            shutil.copytree(ROOT / "cad_ci", project / "cad_ci")
-            shutil.copy2(ROOT / "pyproject.toml", project / "pyproject.toml")
-            wheel_dir = root / "dist"
-            wheel_dir.mkdir()
-
-            previous = Path.cwd()
-            try:
-                os.chdir(project)
-                from setuptools import build_meta
-
-                wheel_name = build_meta.build_wheel(str(wheel_dir))
-            finally:
-                os.chdir(previous)
-
-            with zipfile.ZipFile(wheel_dir / wheel_name) as wheel:
-                names = set(wheel.namelist())
-
-            expected = {
-                "cad_ci/builders/__init__.py",
-                "cad_ci/builders/catalog.py",
-                "cad_ci/builders/batch.py",
-                "cad_ci/builders/runtime.py",
-                "cad_ci/execution/__init__.py",
-                "cad_ci/execution/process.py",
-            }
-            self.assertTrue(expected.issubset(names), expected - names)
+        installed = distribution_files("brainboxemb-cad-ci-lib")
+        self.assertIsNotNone(installed)
+        names = {path.as_posix() for path in installed or ()}
+        expected = {
+            "cad_ci/builders/__init__.py",
+            "cad_ci/builders/catalog.py",
+            "cad_ci/builders/batch.py",
+            "cad_ci/builders/runtime.py",
+            "cad_ci/execution/__init__.py",
+            "cad_ci/execution/process.py",
+        }
+        self.assertTrue(expected.issubset(names), expected - names)
 
     def test_changelog_section_must_match(self):
         with tempfile.TemporaryDirectory() as tmp:
