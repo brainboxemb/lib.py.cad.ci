@@ -213,7 +213,7 @@ def _publication_pages(value: object, path: Path) -> PagesPublication | None:
         or (parsed.parts and parsed.parts[0] == ".cad-ci")
     ):
         raise ConfigError(
-            f"publication.pages.output must be a safe output: {path}"
+            f"publication.pages.output must be a safe item output: {path}"
         )
 
     return PagesPublication(
