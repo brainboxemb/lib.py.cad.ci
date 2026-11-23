@@ -1289,3 +1289,39 @@ rows remain observable in the aggregate batch report.
 The first implementation supports `mesh-geometry` only for built-in builders
 whose runtime role is `reference`. Other adapters or runtime roles require an
 explicit later contract rather than consumer-local command glue.
+
+## 31. Runtime-owned engine interpreter batches
+
+A built-in CAD builder may declare an interpreter path owned by its immutable
+runtime image when that engine is intentionally isolated from the runtime's
+main Python environment.
+
+For the released reference runtime contract:
+
+- CadQuery executes in the main runtime Python;
+- build123d executes through `/opt/build123d/bin/python`.
+
+Interpreter isolation must not degrade model batching:
+
+- all active rows for one builder/interpreter pair execute in one child engine
+  process;
+- no per-model interpreter process is allowed;
+- all compatible builders still share one Docker runtime/container start;
+- the main runtime retains aggregate result ownership and verification
+  execution;
+- successful isolated-engine exports are verified by the same main runtime
+  after export;
+- one failed engine row must not hide later rows or successful rows from the
+  aggregate report.
+
+The runtime batch manifest carries the normalized engine-interpreter metadata.
+The metadata is part of the built-in catalog signature and therefore normal
+SCons freshness identity.
+
+An isolated engine child process performs build/export only. It must not load
+or interpret verification policy and must not start another CAD runtime
+container.
+
+Normal library tests prove interpreter-process cardinality structurally with a
+fake process adapter. Real interpreter/runtime compatibility is proven only by
+the released-stack acceptance repository.
