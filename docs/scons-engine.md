@@ -1162,3 +1162,40 @@ For a configured pattern ending in `/**`:
 This preserves the literal fast-path semantics conceptually while allowing
 wildcards inside the prefix. It does not add a planner, filesystem walk or SCons
 signature mechanism.
+
+## Repository-builder verification package wiring
+
+Repository builder parsing may set one normalized item flag indicating that the
+builder requires the root verification package.
+
+Configuration lowering then reuses the existing synthesized verification
+package item:
+
+```text
+root verification.package
+        |
+        v
+cad-ci-verification-package   (internal, one shared target)
+        |
+        +--> built-in verified runtime producer
+        |
+        +--> repository item whose builder requested verification_package
+```
+
+The public consumer never names the internal node.
+
+For a requesting repository item:
+
+- the internal package item id is appended only to the normalized `Item.needs`;
+- the normalized item stores a boolean capability flag;
+- target specifications carry that flag as signature-relevant metadata;
+- the normal direct-dependency snapshot machinery materializes the package
+  bundle privately per executing target;
+- the driver resolves the single wheel from that private snapshot and publishes
+  its absolute path as `CAD_CI_VERIFICATION_WHEEL`;
+- non-requesting items receive an empty authoritative
+  `CAD_CI_VERIFICATION_WHEEL` value.
+
+The driver remains the only layer that understands the synthesized package id
+and package output layout. No new package target, planner, cache or process
+boundary is introduced.
