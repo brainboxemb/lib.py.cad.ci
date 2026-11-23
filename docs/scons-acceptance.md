@@ -1211,3 +1211,40 @@ Required:
 5. Windows separators are normalized before matching;
 6. the fix uses the existing source inventory and changes no planner/SCons
    execution semantics.
+
+## Case 34 - repository builder consumes the pinned verification wheel
+
+Root configuration pins one exact verification package and maps builder
+`verify-model` to a repository-owned builder directory.
+
+The builder declares:
+
+```yaml
+schema: 1
+verification_package: true
+steps:
+  - id: verify
+    run: [python, verify.py]
+    outputs: [result.txt]
+```
+
+Required:
+
+1. repository loading succeeds only when root `verification.package` exists;
+2. exactly one internal verification-package item exists even when a built-in
+   verified item also consumes the package;
+3. the repository item has the package in its normalized dependency closure
+   without the source `ci.yml` naming that internal id;
+4. its command sees a non-empty `CAD_CI_VERIFICATION_WHEEL`;
+5. that path exists and points inside the target-private package dependency
+   snapshot;
+6. a second unchanged run may keep both package and consumer CURRENT;
+7. changing the exact package pin invalidates the package and requesting
+   consumer through normal dependency/signature semantics;
+8. a builder without `verification_package` receives no package dependency
+   and an empty authoritative wheel environment value;
+9. non-boolean capability values fail configuration;
+10. a Pages publication builder requesting the capability fails configuration.
+
+External acceptance must prove the same contract through the released tool,
+without referring to `cad-ci-verification-package` in consumer configuration.

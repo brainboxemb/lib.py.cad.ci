@@ -171,3 +171,46 @@ The verification definition remains consumer-owned data. Its fields and
 semantics are owned by `lib.py.cad.verification`; do not reproduce them in
 CAD-CI templates or repository scripts.
 
+## Repository-owned builder using the verification package
+
+A repository-owned builder that needs the exact released
+`lib.py.cad.verification` wheel may request it declaratively:
+
+```yaml
+# ci/builders/solidcraft-model/builder.yml
+schema: 1
+verification_package: true
+
+steps:
+  - id: verify
+    run: 'python "$CAD_CI_BUILDER_PATH/verify.py"'
+    outputs: [verification]
+```
+
+Root `cad-ci.yml` must provide the normal exact package pin:
+
+```yaml
+verification:
+  package:
+    repository: brainboxemb/lib.py.cad.verification
+    version: "0.16.0"
+    commit: c7c145b7be0c602724e8cca874ef29990baaad1e
+```
+
+CAD-CI materializes that package once through the normal SCons graph and gives
+each command step of the requesting item:
+
+```text
+CAD_CI_VERIFICATION_WHEEL=/absolute/target-private/path/...whl
+```
+
+The path is inside the command target's private dependency snapshot. Consumer
+configuration must not name `cad-ci-verification-package`, inspect the
+synthesized dependency layout or build/download a second copy of the wheel.
+
+The builder remains responsible for its domain runtime. For example, it may
+mount `CAD_CI_VERIFICATION_WHEEL` read-only into a SolidCraft container and
+place that mounted wheel on `PYTHONPATH`.
+
+This capability is unavailable to `publication.pages.builder` because the
+Pages renderer runs after the SCons graph at the durable publication boundary.

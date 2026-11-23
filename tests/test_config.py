@@ -3,6 +3,7 @@ import tempfile
 import unittest
 
 from cad_ci.config import ConfigError, load_repository, load_repository_config
+from cad_ci.verification.package import PACKAGE_ITEM_ID
 
 
 class ConfigTests(unittest.TestCase):
@@ -952,6 +953,221 @@ class ConfigTests(unittest.TestCase):
                     (f"{name}/model.py", "ci/builders/shared/**"),
                 )
                 self.assertEqual(item.steps[0].outputs, ("result.txt",))
+
+    def test_repository_builder_can_request_root_verification_package(self):
+        """Case 34: builder capability adds one internal package dependency."""
+
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp)
+            (repo / "cad-ci.yml").write_text(
+                "schema: 1\n"
+                "verification:\n"
+                "  package:\n"
+                "    repository: brainboxemb/lib.py.cad.verification\n"
+                "    version: '0.16.0'\n"
+                "    commit: c7c145b7be0c602724e8cca874ef29990baaad1e\n"
+                "items: [item]\n"
+                "builders: {verify-model: ci/builders/verify-model}\n",
+                encoding="utf-8",
+            )
+            builder = repo / "ci" / "builders" / "verify-model"
+            builder.mkdir(parents=True)
+            (builder / "builder.yml").write_text(
+                "schema: 1\n"
+                "verification_package: true\n"
+                "steps:\n"
+                "  - id: verify\n"
+                "    run: [python, -c, 'print(1)']\n"
+                "    outputs: [result.txt]\n",
+                encoding="utf-8",
+            )
+            item = repo / "item"
+            item.mkdir()
+            (item / "ci.yml").write_text(
+                "id: item\n"
+                "builder: verify-model\n",
+                encoding="utf-8",
+            )
+
+            items = load_repository(repo)
+
+            self.assertIn(PACKAGE_ITEM_ID, items)
+            self.assertTrue(items[PACKAGE_ITEM_ID].internal)
+            self.assertTrue(items["item"].builder_verification_package)
+            self.assertEqual(items["item"].needs, (PACKAGE_ITEM_ID,))
+
+    def test_repository_builder_and_builtin_share_one_verification_package(self):
+        """Case 34: built-in and repository consumers share one package item."""
+
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp)
+            (repo / "cad-ci.yml").write_text(
+                "schema: 1\n"
+                "verification:\n"
+                "  package:\n"
+                "    repository: brainboxemb/lib.py.cad.verification\n"
+                "    version: '0.16.0'\n"
+                "    commit: c7c145b7be0c602724e8cca874ef29990baaad1e\n"
+                "runtimes:\n"
+                "  reference: ghcr.io/example/reference:v1\n"
+                "items: [repo-model, builtin-model]\n"
+                "builders: {verify-model: ci/builders/verify-model}\n",
+                encoding="utf-8",
+            )
+            builder = repo / "ci" / "builders" / "verify-model"
+            builder.mkdir(parents=True)
+            (builder / "builder.yml").write_text(
+                "schema: 1\n"
+                "verification_package: true\n"
+                "steps: [{id: verify, run: [python, -c, 'print(1)']}]\n",
+                encoding="utf-8",
+            )
+            repo_model = repo / "repo-model"
+            repo_model.mkdir()
+            (repo_model / "ci.yml").write_text(
+                "id: repo-model\nbuilder: verify-model\n",
+                encoding="utf-8",
+            )
+            builtin = repo / "builtin-model"
+            builtin.mkdir()
+            (builtin / "ci.yml").write_text(
+                "id: builtin-model\n"
+                "builder: build123d\n"
+                "verification:\n"
+                "  adapter: mesh-geometry\n"
+                "  definition: geometry.json\n",
+                encoding="utf-8",
+            )
+            (builtin / "model.py").write_text(
+                "model = object()\n",
+                encoding="utf-8",
+            )
+            (builtin / "geometry.json").write_text(
+                "{}\n",
+                encoding="utf-8",
+            )
+
+            items = load_repository(repo)
+
+            self.assertEqual(
+                sum(item_id == PACKAGE_ITEM_ID for item_id in items),
+                1,
+            )
+            self.assertEqual(
+                items["repo-model"].needs,
+                (PACKAGE_ITEM_ID,),
+            )
+            self.assertEqual(
+                items["cad-ci-runtime-reference"].needs,
+                (PACKAGE_ITEM_ID,),
+            )
+
+    def test_repository_builder_verification_package_requires_root_pin(self):
+        """Case 34: package capability without a root pin is invalid."""
+
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp)
+            (repo / "cad-ci.yml").write_text(
+                "schema: 1\n"
+                "items: [item]\n"
+                "builders: {verify-model: ci/builders/verify-model}\n",
+                encoding="utf-8",
+            )
+            builder = repo / "ci" / "builders" / "verify-model"
+            builder.mkdir(parents=True)
+            (builder / "builder.yml").write_text(
+                "schema: 1\n"
+                "verification_package: true\n"
+                "steps: [{id: verify, run: [python, -c, 'print(1)']}]\n",
+                encoding="utf-8",
+            )
+            item = repo / "item"
+            item.mkdir()
+            (item / "ci.yml").write_text(
+                "id: item\nbuilder: verify-model\n",
+                encoding="utf-8",
+            )
+
+            with self.assertRaisesRegex(
+                ConfigError,
+                "requires root verification.package",
+            ):
+                load_repository(repo)
+
+    def test_builder_verification_package_must_be_boolean(self):
+        """Case 34: builder capability rejects non-boolean values."""
+
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp)
+            (repo / "cad-ci.yml").write_text(
+                "schema: 1\n"
+                "items: [item]\n"
+                "builders: {verify-model: ci/builders/verify-model}\n",
+                encoding="utf-8",
+            )
+            builder = repo / "ci" / "builders" / "verify-model"
+            builder.mkdir(parents=True)
+            (builder / "builder.yml").write_text(
+                "schema: 1\n"
+                "verification_package: yes-please\n"
+                "steps: [{id: verify, run: [python, -c, 'print(1)']}]\n",
+                encoding="utf-8",
+            )
+            item = repo / "item"
+            item.mkdir()
+            (item / "ci.yml").write_text(
+                "id: item\nbuilder: verify-model\n",
+                encoding="utf-8",
+            )
+
+            with self.assertRaisesRegex(
+                ConfigError,
+                "verification_package must be boolean",
+            ):
+                load_repository(repo)
+
+    def test_pages_builder_cannot_request_verification_package(self):
+        """Case 34: post-build Pages builder cannot request SCons package state."""
+
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp)
+            (repo / "cad-ci.yml").write_text(
+                "schema: 1\n"
+                "verification:\n"
+                "  package:\n"
+                "    repository: brainboxemb/lib.py.cad.verification\n"
+                "    version: '0.16.0'\n"
+                "    commit: c7c145b7be0c602724e8cca874ef29990baaad1e\n"
+                "items: [item]\n"
+                "builders: {pages-site: ci/builders/pages-site}\n"
+                "publication:\n"
+                "  pages: {builder: pages-site, output: site}\n",
+                encoding="utf-8",
+            )
+            builder = repo / "ci" / "builders" / "pages-site"
+            builder.mkdir(parents=True)
+            (builder / "builder.yml").write_text(
+                "schema: 1\n"
+                "verification_package: true\n"
+                "steps:\n"
+                "  - id: render\n"
+                "    run: [python, -c, 'print(1)']\n"
+                "    outputs: [site]\n",
+                encoding="utf-8",
+            )
+            item = repo / "item"
+            item.mkdir()
+            (item / "ci.yml").write_text(
+                "id: item\n"
+                "steps: [{id: build, run: [python, -c, 'print(1)']}]\n",
+                encoding="utf-8",
+            )
+
+            with self.assertRaisesRegex(
+                ConfigError,
+                "publication.pages builder cannot request verification_package",
+            ):
+                load_repository_config(repo)
 
     def test_item_rejects_builder_and_inline_steps_together(self):
         with tempfile.TemporaryDirectory() as tmp:

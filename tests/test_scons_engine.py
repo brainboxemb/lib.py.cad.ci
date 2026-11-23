@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
 from pathlib import Path
 import json
 import os
@@ -29,6 +30,7 @@ from cad_ci.scons.engine import (
     write_manifest,
 )
 from cad_ci.repository.paths import source_inventory
+from cad_ci.verification.package import PACKAGE_ITEM_ID
 
 
 def _write(path: Path, text: str) -> None:
@@ -1440,6 +1442,103 @@ out.mkdir(parents=True, exist_ok=True)
             self.assertEqual(
                 (root / "build" / "item" / "result.txt").read_text(),
                 "shared:item:v2",
+            )
+
+
+    def test_repository_builder_receives_target_private_verification_wheel(self):
+        """Case 34: real SCons command receives the exact private wheel path."""
+
+        self.require_scons()
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            _write(
+                root / "cad-ci.yml",
+                "schema: 1\n"
+                "verification:\n"
+                "  package:\n"
+                "    repository: brainboxemb/lib.py.cad.verification\n"
+                "    version: '0.16.0'\n"
+                "    commit: c7c145b7be0c602724e8cca874ef29990baaad1e\n"
+                "items: [item]\n"
+                "builders: {verify-model: ci/builders/verify-model}\n",
+            )
+            _write(
+                root / "ci" / "builders" / "verify-model" / "builder.yml",
+                "schema: 1\n"
+                "verification_package: true\n"
+                "steps:\n"
+                "  - id: verify\n"
+                "    run: 'python \"$CAD_CI_BUILDER_PATH/verify.py\"'\n"
+                "    outputs: [result.txt]\n",
+            )
+            _write(
+                root / "ci" / "builders" / "verify-model" / "verify.py",
+                """import os
+from pathlib import Path
+wheel = Path(os.environ["CAD_CI_VERIFICATION_WHEEL"])
+assert wheel.is_file()
+out = Path(os.environ["CAD_CI_OUTPUT"])
+out.mkdir(parents=True, exist_ok=True)
+(out / "result.txt").write_text(str(wheel))
+""",
+            )
+            _write(
+                root / "item" / "ci.yml",
+                "id: item\n"
+                "builder: verify-model\n",
+            )
+            _write(
+                root / "fake_package.py",
+                """import os
+from pathlib import Path
+out = Path(os.environ["CAD_CI_OUTPUT"])
+dist = out / "dist"
+dist.mkdir(parents=True, exist_ok=True)
+(dist / "brainboxemb_cad_verification_lib-0.16.0-py3-none-any.whl").write_bytes(b"wheel")
+(out / "provenance.json").write_text("{}\\n")
+""",
+            )
+
+            items = load_repository(root)
+            package = items[PACKAGE_ITEM_ID]
+            package_step = replace(
+                package.steps[0],
+                run=(sys.executable, "fake_package.py"),
+            )
+            items[PACKAGE_ITEM_ID] = replace(
+                package,
+                steps=(package_step,),
+            )
+            request = resolve_request(items, {"item"})
+
+            first = run_scons(root, items, request)
+            self.assertEqual(
+                _outcomes(first),
+                {
+                    f"{PACKAGE_ITEM_ID}:package": "BUILT",
+                    "item:verify": "BUILT",
+                },
+            )
+            wheel_path = Path(
+                (root / "build" / "item" / "result.txt").read_text()
+            )
+            self.assertTrue(wheel_path.is_file())
+            self.assertIn(
+                DEPENDENCY_RUN_ROOT.as_posix(),
+                wheel_path.as_posix(),
+            )
+            self.assertNotEqual(
+                wheel_path.parent.parent,
+                root / "build" / ".cad-ci-verification" / "package",
+            )
+
+            second = run_scons(root, items, request)
+            self.assertEqual(
+                _outcomes(second),
+                {
+                    f"{PACKAGE_ITEM_ID}:package": "CURRENT",
+                    "item:verify": "CURRENT",
+                },
             )
 
 if __name__ == "__main__":

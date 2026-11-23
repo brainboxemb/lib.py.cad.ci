@@ -35,6 +35,11 @@ from cad_ci.scons.bundle import (
     write_bundle,
 )
 from cad_ci.execution.timing import utc_now
+from cad_ci.verification.package import (
+    PACKAGE_ITEM_ID,
+    VerificationPackageError,
+    materialized_wheel,
+)
 
 
 ROOT = Path.cwd().resolve()
@@ -113,12 +118,24 @@ def _dependency_context(spec: dict) -> dict:
             snapshot_root,
             tuple(str(value) for value in dependency["outputs"]),
         )
-        result[str(dependency["item_id"])] = {
+        row = {
             "output_root": str(snapshot_root.resolve()),
             "outputs": list(dependency["outputs"]),
             "final_bundle": str(final_bundle.resolve()),
             "final_bundle_sha256": bundle_sha256(final_bundle),
         }
+        if (
+            spec.get("builder_verification_package")
+            and str(dependency["item_id"]) == PACKAGE_ITEM_ID
+        ):
+            try:
+                wheel = materialized_wheel(snapshot_root / "dist")
+            except VerificationPackageError as exc:
+                raise BundleError(
+                    f"verification package dependency is invalid: {exc}"
+                ) from exc
+            row["verification_wheel"] = str(wheel.resolve())
+        result[str(dependency["item_id"])] = row
     return result
 
 
@@ -138,6 +155,15 @@ def _command_environment(
             for name, value in spec.get("variables", {}).items()
         }
     )
+    verification_wheel = ""
+    if spec.get("builder_verification_package"):
+        verification_wheel = str(
+            dependency_context.get(PACKAGE_ITEM_ID, {}).get(
+                "verification_wheel",
+                "",
+            )
+        )
+
     env.update(
         {
             "CAD_CI_REPO": str(ROOT),
@@ -154,6 +180,7 @@ def _command_environment(
             "CAD_CI_RUNTIME": str(spec.get("runtime") or ""),
             "CAD_CI_RUNTIME_IMAGE": str(spec.get("runtime_image") or ""),
             "CAD_CI_OUTPUT": str(_output_root(spec).resolve()),
+            "CAD_CI_VERIFICATION_WHEEL": verification_wheel,
             "CAD_CI_DEPENDENCIES_JSON": json.dumps(
                 dependency_context,
                 sort_keys=True,
