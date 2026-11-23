@@ -2,9 +2,9 @@
 
 Current source of truth for unfinished work in `lib.py.cad.ci` (2026-11-23).
 
-## Current owner fix
+## Release candidate
 
-### #132 — restrict model-owned CadQuery export to cq.Assembly
+### #134 — publish 0.18.2 with CadQuery Workplane compatibility
 
 **Now.**
 
@@ -12,32 +12,35 @@ Released baseline:
 
 - `lib.py.cad.ci v0.18.1` @
   `6064a53b9ea1c340d49893ca0f8d1fa5e3e138ea`;
-- v0.18.1 correctly enables real `cq.Assembly` export but external acceptance
-  found that its callable-`.export` detection also captures normal
-  `cq.Workplane` values.
+- v0.18.1 added real `cq.Assembly` export;
+- external tool.cad.ci.test #248 proved that Assembly succeeds but normal
+  `cq.Workplane` regressed because callable `.export` was used as the
+  discriminator;
+- #132 corrected that dispatch and merged as
+  `4aa9a68e51d7c281886688c287c54786f2e71e51`.
 
-External evidence from tool.cad.ci.test #248 / PR #249:
+0.18.2 must publish that compatible behavior:
 
-- root 019 real `cq.Assembly`: PASS;
-- existing root 017 real `cq.Workplane`: FAIL with
-  `TypeError: Workplane.export() got an unexpected keyword argument 'exportType'`.
+- actual `cadquery.Assembly` -> model-owned
+  `export(..., exportType="STL")`;
+- Workplane/Shape/other normal values -> `cadquery.exporters.export`;
+- one shared reference runtime/container, current SCons semantics unchanged.
 
-Required correction:
+Release requirements:
 
-1. select model-owned `export(..., exportType="STL")` only for actual
-   `cadquery.Assembly` instances;
-2. keep Workplane/Shape and other normal exporter-compatible values on
-   `cadquery.exporters.export`;
-3. retain one shared reference runtime/container and current SCons behavior;
-4. add a regression proving a non-Assembly object with a callable `.export`
-   still uses the normal exporters module;
-5. after merge, publish a new patch release without moving v0.18.1.
+1. VERSION and pyproject declare exactly 0.18.2;
+2. CHANGELOG records the #132 compatibility correction;
+3. installed-wheel/SCons CI is green on the exact release PR;
+4. merge the tested release PR;
+5. verify `v0.18.2` targets the exact tested merge commit;
+6. repin/release the thin tool;
+7. rerun external #248 acceptance before Forge #740 resumes.
 
 ## Open issue assessment
 
 | Issue | Status | Next |
 | --- | --- | --- |
-| #132 Restrict model-owned CadQuery export to cq.Assembly | **now** | Fix type discrimination, qualify, then publish a new patch release and repin the thin tool. |
+| #134 Publish lib.py.cad.ci 0.18.2 | **now** | Qualify, merge and verify release; then repin the thin tool. |
 | #89 Align historical changelog | later / docs-only | Keep separate from the active Forge migration. |
 
 ## Performance boundary
@@ -46,4 +49,4 @@ Required correction:
 - source inventory remains one enumeration per run;
 - verification package remains one shared target;
 - build123d/CadQuery compatible models remain one shared reference runtime;
-- the fix changes only per-model CadQuery export dispatch inside that runtime.
+- the correction changes only CadQuery export dispatch inside that runtime.
