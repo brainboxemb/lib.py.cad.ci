@@ -26,7 +26,7 @@ from SCons.Script import (
     Value,
 )
 
-from cad_ci.scons_bundle import (
+from cad_ci.scons.bundle import (
     BundleError,
     bundle_sha256,
     copy_dependency_outputs,
