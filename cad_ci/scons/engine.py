@@ -351,6 +351,10 @@ def target_specs(
                 if configured_step.selection_context == "direct_dependents"
                 else ()
             )
+            active_dependent_config_digests = {
+                dependent_id: _json_digest(items[dependent_id].config_data)
+                for dependent_id in active_dependents
+            }
 
             if index == 0:
                 dependencies = [
@@ -417,6 +421,9 @@ def target_specs(
                 "needs": list(item.needs),
                 "selection_context": configured_step.selection_context,
                 "active_dependents": list(active_dependents),
+                "active_dependent_config_digests": (
+                    active_dependent_config_digests
+                ),
             }
 
             bundle_rel = _bundle_path(item, configured_step)
