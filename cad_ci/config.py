@@ -773,19 +773,28 @@ def _builder_steps(
     builder_path: Path,
     default_timeout: int | None,
     item_root: Path,
-) -> tuple[tuple[Step, ...], Path]:
-    """Load executable implementation from one repository-owned builder."""
+) -> tuple[tuple[Step, ...], Path, bool]:
+    """Load executable implementation and generic capabilities for one builder."""
 
     config_path = repo / builder_path / "builder.yml"
     data = _load_yaml(config_path)
     if data.get("schema") != 1:
         raise ConfigError(f"unsupported builder schema in {config_path}")
 
-    invalid = sorted(set(data) - {"schema", "description", "steps"})
+    invalid = sorted(
+        set(data) - {"schema", "description", "steps", "verification_package"}
+    )
     if invalid:
         raise ConfigError(
             f"builder {builder_name} contains unsupported field(s): "
             + ", ".join(invalid)
+        )
+
+    verification_package = data.get("verification_package", False)
+    if not isinstance(verification_package, bool):
+        raise ConfigError(
+            f"builder {builder_name} verification_package must be boolean: "
+            f"{config_path}"
         )
 
     builder_watch = f"{builder_path.as_posix()}/**"
@@ -796,7 +805,7 @@ def _builder_steps(
         item_root,
         builder_watch=builder_watch,
     )
-    return steps, config_path
+    return steps, config_path, verification_package
 
 
 def _check_output_ownership(steps: tuple[Step, ...], path: Path) -> None:
@@ -990,6 +999,7 @@ def load_repository_config(repo: Path) -> RepositoryConfig:
             )
 
         builder_path: Path | None = None
+        builder_verification_package = False
         runtime_role: str | None = None
         runtime_image: str | None = None
         needs = _strings(data.get("needs"), "needs", config_path)
@@ -1051,13 +1061,20 @@ def load_repository_config(repo: Path) -> RepositoryConfig:
                     raise ConfigError(
                         f"unknown builder {builder_name!r}: {config_path}"
                     ) from exc
-                steps, _ = _builder_steps(
+                steps, _, builder_verification_package = _builder_steps(
                     repo,
                     builder_name,
                     builder_path,
                     default_timeout,
                     rel,
                 )
+                if builder_verification_package:
+                    if verification_package is None:
+                        raise ConfigError(
+                            f"builder {builder_name} requires root "
+                            f"verification.package: {config_path}"
+                        )
+                    needs = tuple(dict.fromkeys((*needs, PACKAGE_ITEM_ID)))
                 builder_watch = f"{builder_path.as_posix()}/**"
                 watch = tuple(dict.fromkeys((*watch, builder_watch)))
         else:
@@ -1088,24 +1105,28 @@ def load_repository_config(repo: Path) -> RepositoryConfig:
             config_data=data,
             builder=builder_name if has_builder else None,
             builder_path=builder_path,
+            builder_verification_package=builder_verification_package,
             runtime_role=runtime_role,
             runtime_image=runtime_image,
             verification=verification,
         )
 
-    verification_items = [
+    verification_package_consumers = [
         item
         for item in items.values()
-        if item.verification is not None
+        if (
+            item.verification is not None
+            or item.builder_verification_package
+        )
     ]
-    if verification_items:
+    if verification_package_consumers:
         assert verification_package is not None
         if PACKAGE_ITEM_ID in items:
             raise ConfigError(
                 f"verification package item id conflicts with consumer item: {PACKAGE_ITEM_ID}"
             )
         processed_verification = any(
-            item.process for item in verification_items
+            item.process for item in verification_package_consumers
         )
         items[PACKAGE_ITEM_ID] = Item(
             id=PACKAGE_ITEM_ID,
@@ -1275,13 +1296,18 @@ def load_repository_config(repo: Path) -> RepositoryConfig:
             raise ConfigError(
                 f"publication.pages references unknown builder: {pages.builder}"
             ) from exc
-        steps, _ = _builder_steps(
+        steps, _, builder_verification_package = _builder_steps(
             repo,
             pages.builder,
             builder_path,
             default_timeout,
             Path("."),
         )
+        if builder_verification_package:
+            raise ConfigError(
+                "publication.pages builder cannot request "
+                f"verification_package: {pages.builder}"
+            )
         if len(steps) != 1:
             raise ConfigError(
                 "publication.pages builder requires exactly one command step: "
