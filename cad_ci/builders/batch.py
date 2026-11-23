@@ -137,6 +137,7 @@ def build_manifest(
             "item_path": item_path,
             "builder": builder.name,
             "builder_contract": builder.contract,
+            "engine_python": builder.engine_python,
             "source": f"/repo/{item_path}/model.py",
             "output": f"/output/items/{item_path}/{builder.output}",
         }
@@ -226,7 +227,8 @@ def run_batch(
             "/repo",
             image,
             "python",
-            "/cad-ci-lib/cad_ci/builders/runtime.py",
+            "-m",
+            "cad_ci.builders.runtime",
             "--manifest",
             f"/output/{manifest.name}",
             "--report",
