@@ -1191,3 +1191,23 @@ that each contain `builder: shared`, and one
 Repository-owned builder acceptance remains unchanged. Built-in generic engine
 builders additionally use Cases 2B-2D; they lower to the same normal Step,
 dependency-copy and SCons mechanisms rather than defining a second scheduler.
+
+## Case 33 - recursive wildcard prefix path matching
+
+Given repository-relative paths:
+
+```text
+models/components/hub75_panel/detailed/scpf/model.py
+examples/simple-box/scpf/model.py
+folder/file.txt
+```
+
+Required:
+
+1. `models/*/*/*/scpf/**` matches the nested HUB75 source;
+2. `*/scpf/**` matches the example source tree;
+3. literal `folder/**` matches both `folder` and its descendants;
+4. unrelated sibling paths do not match;
+5. Windows separators are normalized before matching;
+6. the fix uses the existing source inventory and changes no planner/SCons
+   execution semantics.

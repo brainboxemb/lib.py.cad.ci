@@ -4,47 +4,55 @@ Current source of truth for unfinished work in `lib.py.cad.ci` (2026-11-23).
 
 ## Accepted implementation baseline
 
-- #118 host-owned shared runtime output is merged at
-  `89ba68f12fc95911e2151537c31f2046a7d7e978` and green on main;
-- `lib.py.cad.verification v0.16.0` remains immutable at
+- `lib.py.cad.ci v0.17.2` @
+  `d4e8140d988be06460326fda802e514b6b306d64`;
+- `tool.cad.ci v0.33.2` @
+  `4812d87304109a68538d844e8baa5bacdbbc198d`;
+- `lib.py.cad.verification v0.16.0` @
   `c7c145b7be0c602724e8cca874ef29990baaad1e`;
-- external acceptance #240 remains the real-runtime gate before Forge adoption.
+- external released-stack acceptance #240 is complete, including real
+  build123d/CadQuery cold/current/rebuild behavior.
+
+Forge #740 is the active consumer migration and has exposed two generic owner
+requirements that must be fixed here before Forge adopts them.
 
 ## Current work
 
-### #120 — publish immutable 0.17.2
+### #121 — wildcard prefixes before trailing /**
 
 **Now.**
 
-Promote the #118 bind-mount ownership fix as a patch release:
+Configured recursive patterns such as `examples/*/scpf/**` must preserve normal
+wildcard semantics in the prefix while retaining literal `folder/**`
+folder-and-descendant behavior.
 
-1. VERSION, pyproject.toml and CHANGELOG.md declare 0.17.2;
-2. release PR installed-wheel/SCons CI is green;
-3. merge the release PR;
-4. verify `v0.17.2` targets the exact tested release commit;
-5. repin the thin tool with no new tool-owned behavior;
-6. rerun external acceptance #240 on the exact patch stack.
+This is a focused path-matching correctness fix. It must not change planning,
+selection fan-out, SCons scheduling or source-inventory ownership.
 
-### #106 — extract reusable batched CAD builders from Forge
+### #123 — public verification package for repository-owned builders
 
-**Blocked on #120 + #240.**
+**Next after #121.**
 
-After the real released runtime passes cold/current/rebuild black-box acceptance,
-migrate Forge away from duplicated reference batch/package wiring.
+Expose the root-pinned verification wheel to repository-owned builders through a
+public builder capability/environment contract. Consumers must not name the
+internal synthesized package item.
+
+After #121 and #123 are green, publish one coherent owner release, repin/release
+the thin tool, black-box accept the new stack, then resume Forge #740.
 
 ## Open issue assessment
 
 | Issue | Status | Next |
 | --- | --- | --- |
-| #120 Publish 0.17.2 host-output ownership patch | **now** | Finish immutable release gate. |
-| #106 Extract reusable batched CAD builders from Forge | **blocked by #120/#240** | Resume Forge migration after external acceptance. |
-| #89 Align historical changelog | later / docs-only | Apply shared changelog presentation only. |
+| #121 Make trailing /** path matching honor wildcard prefixes | **now** | Fix/document/test recursive wildcard prefix semantics. |
+| #123 Expose pinned verification wheel to repository-owned builders | **next** | Add public builder capability after #121. |
+| #89 Align historical changelog | later / docs-only | Keep separate from active consumer migration. |
 
 ## Performance boundary
 
 - SCons remains the only rebuild/reuse engine;
+- source inventory remains one enumeration per run;
+- path matching must not introduce a second repository scan;
 - one compatible N-model build+verification batch means one Docker runtime
   start;
-- isolated engines use at most one process per active engine/interpreter group;
-- current/cache results avoid Docker and engine-process startup entirely;
-- output ownership requires no post-run recursive filesystem repair.
+- current/cache results avoid Docker and engine-process startup entirely.

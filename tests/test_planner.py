@@ -3,6 +3,7 @@ import tempfile
 import unittest
 
 from cad_ci.config import load_repository
+from cad_ci.repository.paths import matches
 from cad_ci.repository.planner import affected_items, build_plan
 
 
@@ -224,6 +225,41 @@ class PlannerTests(unittest.TestCase):
                 ("ci/builders/shared/build.py",),
             )
             self.assertEqual(selected, {"a", "b"})
+
+
+class PathMatchingTests(unittest.TestCase):
+    def test_recursive_pattern_preserves_wildcards_in_prefix(self):
+        """Case 33: recursive wildcard prefixes match nested source trees."""
+
+        self.assertTrue(
+            matches(
+                "models/components/hub75_panel/detailed/scpf/model.py",
+                "models/*/*/*/scpf/**",
+            )
+        )
+        self.assertTrue(
+            matches(
+                "examples/simple-box/scpf/model.py",
+                "*/scpf/**",
+            )
+        )
+
+    def test_literal_recursive_pattern_keeps_directory_tree_semantics(self):
+        """Case 33: literal folder/** includes the folder and descendants."""
+
+        self.assertTrue(matches("folder", "folder/**"))
+        self.assertTrue(matches("folder/file.txt", "folder/**"))
+        self.assertFalse(matches("folder-sibling/file.txt", "folder/**"))
+
+    def test_recursive_pattern_normalizes_windows_separators(self):
+        """Case 33: recursive matching remains POSIX-normalized."""
+
+        self.assertTrue(
+            matches(
+                r"models\components\hub75_panel\detailed\scpf\model.py",
+                r"models\*\*\*\scpf\**",
+            )
+        )
 
 if __name__ == "__main__":
     unittest.main()

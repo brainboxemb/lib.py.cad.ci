@@ -1145,3 +1145,20 @@ their own spec, so no mutable global selection state is shared.
 CacheDir keys remain correct because the target signature contains the exact
 list. A cache entry built for one dependent subset cannot satisfy another
 subset signature.
+
+## Recursive wildcard-prefix matching
+
+Path matching stays in `cad_ci.repository.paths` and consumes the existing
+single source inventory.
+
+For a configured pattern ending in `/**`:
+
+1. strip only the trailing recursive marker to obtain the directory prefix;
+2. build POSIX ancestor candidates from the changed/source path, including the
+   path itself;
+3. apply normal `fnmatch` semantics between each candidate and the prefix;
+4. match when any candidate matches.
+
+This preserves the literal fast-path semantics conceptually while allowing
+wildcards inside the prefix. It does not add a planner, filesystem walk or SCons
+signature mechanism.

@@ -21,10 +21,20 @@ def matches(path: str, pattern: str) -> bool:
     pattern = pattern.replace("\\", "/")
 
     # fnmatch does not give trailing ** the directory-tree meaning needed by
-    # repository configuration. Treat folder/** as folder plus descendants.
+    # repository configuration. Match the recursive directory prefix against
+    # the path and each POSIX ancestor so wildcard syntax in that prefix keeps
+    # its normal meaning.
     if pattern.endswith("/**"):
         prefix = pattern[:-3].rstrip("/")
-        return path == prefix or path.startswith(prefix + "/")
+        parts = path.split("/")
+        candidates = (
+            path,
+            *(
+                "/".join(parts[:index])
+                for index in range(1, len(parts))
+            ),
+        )
+        return any(fnmatch(candidate, prefix) for candidate in candidates)
     return fnmatch(path, pattern)
 
 
