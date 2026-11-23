@@ -51,6 +51,24 @@ class PagesPublication:
 
 
 @dataclass(frozen=True)
+class VerificationPackage:
+    """Exact released verification-library source used by CAD runtimes."""
+
+    repository: str
+    version: str
+    commit: str
+
+
+@dataclass(frozen=True)
+class VerificationConfig:
+    """Normalized item verification wiring; semantics live in cad_verification."""
+
+    adapter: str
+    definition: str
+    verification_id: str
+
+
+@dataclass(frozen=True)
 class RepositoryConfig:
     """Validated repository-wide configuration plus discovered items."""
 
@@ -58,6 +76,7 @@ class RepositoryConfig:
     pages: PagesPublication | None = None
     variables: tuple[tuple[str, str], ...] = ()
     runtimes: tuple[tuple[str, str], ...] = ()
+    verification_package: VerificationPackage | None = None
 
 
 @dataclass(frozen=True)
@@ -89,4 +108,5 @@ class Item:
     builder_path: Path | None = None
     runtime_role: str | None = None
     runtime_image: str | None = None
+    verification: VerificationConfig | None = None
     internal: bool = False
