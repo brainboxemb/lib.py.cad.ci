@@ -689,3 +689,81 @@ available for callers outside this durable-lane contract.
 
 PR previews remain under `previews/pr-<number>` and are always preserved by
 stable publication independently of the named keep set.
+## Verification integration
+
+Issue #110 adds verification as configuration and runtime wiring, not as a
+second verification engine.
+
+### Data model
+
+`RepositoryConfig` gains an optional immutable `VerificationPackage` with
+`repository`, `version` and `commit`. `Item` gains an optional immutable
+`VerificationConfig` with `adapter`, normalized repository-relative
+`definition`, and `verification_id`.
+
+The initial adapter catalog contains only `mesh-geometry`, compatible with the
+`reference` runtime. The catalog describes compatibility/wiring only and
+contains no geometry semantics.
+
+### Verification package producer
+
+When at least one processed item uses verification, the loader synthesizes one
+private `cad-ci-verification-package` item under
+`.cad-ci-verification/package`. Its one command step runs
+`python -m cad_ci.verification.package` with the exact repository/version/commit
+pin and declares outputs `dist` and `provenance.json`.
+
+The package command performs the already-proven Forge operation: `pip wheel
+--no-deps` from the exact commit, validate wheel metadata version, calculate
+SHA-256 and write provenance. External process execution crosses
+`cad_ci.execution.process`. The command contains the package pin, so ordinary
+SCons signatures own invalidation.
+
+### Shared runtime dependency
+
+A shared built-in runtime producer gains `cad-ci-verification-package` as a
+normal `needs` dependency only when one of its processed consumers requests
+verification. At batch execution `current_context()` validates/materializes
+that dependency and the batch locates exactly one verification wheel in its
+declared `dist` output.
+
+The wheel is mounted read-only and added to `PYTHONPATH`; it is never installed.
+The CAD-CI package tree is also mounted read-only so the in-runtime integration
+adapter is available in the same process.
+
+### Manifest
+
+An active model row keeps the existing builder fields and optionally adds a
+`verification` object containing adapter, absolute in-container definition path,
+verification ID and output directory.
+
+### Runtime execution
+
+For each row the existing runtime executes `model.py`, exports `model.stl`, and
+then, when configured, delegates to `cad_ci.verification.runtime`. That adapter
+imports the released `cad_verification` wheel, calls
+`load_geometry_contract()` and `run_mesh_geometry_verification()`, and returns
+the produced report status.
+
+Models remain sequential in the initial runtime executor. A failure does not
+prevent later rows from running.
+
+### Projection
+
+The shared producer continues to own one `items` output tree. A non-verified
+public item retains one `build` copy step. A verified public item has two
+ordered dependency-copy steps from the same producer:
+
+- `build`: source `items/<path>`, output `model.stl`;
+- `verify`: source `items/<path>`, output `verification`.
+
+The existing copy implementation extracts only the declared output below the
+source root, so those projections remain isolated. No extra runtime target is
+created.
+
+### Performance boundary
+
+The package producer, shared CAD runtime producer and public copy targets are
+ordinary SCons targets. Current/cache behavior remains entirely SCons-owned.
+The design adds no per-model process/container, no second planner and no
+second cache.
