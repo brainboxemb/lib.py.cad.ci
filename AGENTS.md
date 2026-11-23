@@ -9,9 +9,15 @@
 Keep this repository domain-neutral.
 
 Generic configuration, Git selection, SCons translation, execution wrappers,
-evidence, durable build output, **complete-scope state/resolution**, Pages and
-publication mechanics belong here.
-Forge stages, SolidCraft rules and CAD-domain checks do not.
+evidence, durable build output, **complete-scope state/resolution**, Pages,
+publication mechanics and reusable CAD engine invocation/export builders belong
+here.
+
+Generic engine adapters such as build123d or CadQuery may be built-in when they
+only define reusable execution/export behavior. Consumer semantics do not move
+with them: Forge stages/API contracts, model-specific geometry expectations,
+SolidCraft verification definitions, presentation policy and other CAD-domain
+checks remain in their owning consumer/verification repositories.
 
 SCons is the only generic rebuild/reuse engine. Do not add a parallel custom
 fingerprint, dependency execution or reuse engine.
