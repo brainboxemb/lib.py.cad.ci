@@ -168,6 +168,14 @@ Each public model item then uses the existing `copy: dependency` action to
 project its own `model.stl`. SCons therefore still sees only normal targets,
 dependencies, signatures and bundles.
 
+Built-in engine export is resolved inside the shared runtime. For CadQuery, the
+runtime preserves the documented final-`model` contract across both common
+shape/workplane values and `cq.Assembly`: when the exposed model owns a callable
+CadQuery export method, the runtime requests STL through that model-owned path;
+otherwise it falls back to `cadquery.exporters.export`. This decision remains
+inside the existing runtime process and does not create another producer,
+process or SCons target.
+
 The producer command environment includes:
 
 ~~~text

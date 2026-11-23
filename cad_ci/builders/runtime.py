@@ -49,7 +49,13 @@ def _export(builder: str, model, output: Path) -> None:
     elif builder == "cadquery":
         from cadquery import exporters
 
-        exporters.export(model, str(output))
+        # CadQuery Assembly owns its STL export path. Shape/Workplane-style
+        # values continue through the normal exporters module.
+        export = getattr(model, "export", None)
+        if callable(export):
+            export(str(output), exportType="STL")
+        else:
+            exporters.export(model, str(output))
     else:
         raise RuntimeError(f"unsupported built-in CAD builder: {builder}")
 

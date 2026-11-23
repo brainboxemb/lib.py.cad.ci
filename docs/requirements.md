@@ -142,7 +142,10 @@ The initial engine contract is intentionally narrow:
 - executing the source leaves final geometry in global `model`;
 - canonical output is `model.stl`;
 - build123d exports `getattr(model, "part", model)`;
-- CadQuery uses its normal exporter for the exposed model/assembly;
+- CadQuery accepts normal final geometry forms exposed as global `model`,
+  including Shape/Workplane-style values and `cq.Assembly`; Assembly export must
+  use a CadQuery-supported assembly export path rather than passing the
+  Assembly object to a shape-only exporter;
 - the repository is mounted read-only into the runtime;
 - the producer output root is the writable batch result location;
 - all active compatible models are processed sequentially inside the one runtime
