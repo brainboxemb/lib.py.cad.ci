@@ -1152,7 +1152,7 @@ Required sequences:
    - this includes behavior inherited through root item templates;
    - unrelated root configuration does not become a coarse batch input.
 
-8. evidence/cache:
+9. evidence/cache:
    - public step evidence contains `active_dependents`;
    - engine/report/evidence schema versions reflect the new contract;
    - fresh CacheDir cannot restore a batch built for a different dependent set.
