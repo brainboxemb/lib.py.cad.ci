@@ -140,7 +140,7 @@ class BuildStoreTests(unittest.TestCase):
 
     def test_build_store_uses_current_scons_engine_schema(self):
         from cad_ci.publication import build_store
-        from cad_ci import scons_engine
+        from cad_ci.scons import engine as scons_engine
 
         self.assertEqual(
             build_store.ENGINE_SCHEMA,
