@@ -767,3 +767,66 @@ The package producer, shared CAD runtime producer and public copy targets are
 ordinary SCons targets. Current/cache behavior remains entirely SCons-owned.
 The design adds no per-model process/container, no second planner and no
 second cache.
+
+## Runtime-owned isolated engine interpreters
+
+Issue #114 corrects the built-in reference runtime boundary discovered by
+released-stack acceptance.
+
+`BuiltinBuilder` gains optional `engine_python` metadata. The initial catalog
+declares:
+
+```text
+build123d -> /opt/build123d/bin/python
+cadquery  -> main runtime Python
+```
+
+The runtime catalog signature includes this value and the reference runtime
+batch contract is incremented.
+
+The host batch copies `engine_python` into each model manifest row. It does
+not inspect the runtime filesystem or choose interpreters dynamically.
+
+### Main runtime algorithm
+
+The main runtime keeps one Docker process as the orchestration owner:
+
+1. group rows with an explicit `engine_python` by
+   `(builder, engine_python)`;
+2. for each group, write one temporary engine manifest;
+3. invoke that interpreter once with the same mounted
+   `cad_ci.builders.runtime` module in engine-build mode;
+4. read structured per-row export results and delete temporary engine
+   manifest/report files;
+5. execute rows without an isolated interpreter in the main Python;
+6. in original manifest order, run configured verification only for successful
+   exports;
+7. write the existing aggregate batch report.
+
+The initial reference runtime therefore launches at most:
+
+```text
+one Docker container
+  main runtime Python
+    + one /opt/build123d/bin/python process when build123d rows are active
+```
+
+regardless of the number of active build123d models.
+
+### Engine-build mode
+
+Engine-build mode accepts one builder name plus one manifest/report pair. It
+uses the existing `_execute_source()` and `_export()` functions, continues
+through all rows, and emits only:
+
+- item id;
+- builder;
+- pass/error export status;
+- error text.
+
+It never imports `cad_verification` and never performs presentation or
+verification.
+
+External child-process startup crosses the existing
+`cad_ci.execution.process.ProcessRunner` boundary so normal tests can prove
+one process per engine group without starting a real interpreter.

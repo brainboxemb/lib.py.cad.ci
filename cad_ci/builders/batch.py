@@ -137,6 +137,7 @@ def build_manifest(
             "item_path": item_path,
             "builder": builder.name,
             "builder_contract": builder.contract,
+            "engine_python": builder.engine_python,
             "source": f"/repo/{item_path}/model.py",
             "output": f"/output/items/{item_path}/{builder.output}",
         }

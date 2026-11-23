@@ -38,6 +38,47 @@ class RecordingProcessRunner:
         return ProcessResult(returncode=0)
 
 
+class EngineBatchProcessRunner:
+    """Simulate one isolated engine batch and write its structured result."""
+
+    def __init__(self) -> None:
+        self.calls: list[list[str]] = []
+
+    def run(self, command, *, cwd=None, check=False):
+        """Materialize every requested STL and one engine report."""
+
+        argv = list(command)
+        self.calls.append(argv)
+        manifest = Path(argv[argv.index("--manifest") + 1])
+        report = Path(argv[argv.index("--report") + 1])
+        data = json.loads(manifest.read_text(encoding="utf-8"))
+        results = []
+        for row in data["models"]:
+            output = Path(row["output"])
+            output.parent.mkdir(parents=True, exist_ok=True)
+            output.write_text("isolated-build123d\n", encoding="utf-8")
+            results.append(
+                {
+                    "item_id": row["item_id"],
+                    "builder": row["builder"],
+                    "status": "pass",
+                    "error": None,
+                }
+            )
+        report.write_text(
+            json.dumps(
+                {
+                    "schema": 1,
+                    "builder": "build123d",
+                    "status": "pass",
+                    "models": results,
+                }
+            ),
+            encoding="utf-8",
+        )
+        return ProcessResult(returncode=0)
+
+
 class BuiltinBuilderConfigTests(unittest.TestCase):
     """Conformance tests for built-in builder lowering and configuration."""
 
@@ -266,7 +307,7 @@ class BuiltinBuilderBatchTests(unittest.TestCase):
             self.assertEqual(
                 run_batch(
                     "reference",
-                    2,
+                    3,
                     runtime_catalog_signature("reference"),
                     environ=env,
                     process=process,
@@ -290,6 +331,102 @@ class BuiltinBuilderBatchTests(unittest.TestCase):
                     for row in manifest["models"]
                 ],
                 [("a", "build123d"), ("b", "cadquery")],
+            )
+            self.assertEqual(
+                [
+                    row.get("engine_python")
+                    for row in manifest["models"]
+                ],
+                ["/opt/build123d/bin/python", None],
+            )
+
+    def test_isolated_build123d_rows_share_one_engine_process(self):
+        """N build123d rows use one runtime-owned interpreter process."""
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            rows = []
+            for item_id in ("a", "b"):
+                source = root / item_id / "model.py"
+                output = root / "out" / item_id / "model.stl"
+                _write(source, "model = object()\n")
+                rows.append(
+                    {
+                        "item_id": item_id,
+                        "builder": "build123d",
+                        "engine_python": "/opt/build123d/bin/python",
+                        "source": str(source),
+                        "output": str(output),
+                    }
+                )
+
+            cad_source = root / "c" / "model.py"
+            cad_output = root / "out" / "c" / "model.stl"
+            _write(cad_source, "model = object()\n")
+            rows.append(
+                {
+                    "item_id": "c",
+                    "builder": "cadquery",
+                    "engine_python": None,
+                    "source": str(cad_source),
+                    "output": str(cad_output),
+                }
+            )
+
+            manifest = root / "manifest.json"
+            report = root / "report.json"
+            manifest.write_text(
+                json.dumps(
+                    {
+                        "schema": 1,
+                        "runtime": "reference",
+                        "batch_contract": 3,
+                        "models": rows,
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            cadquery = types.ModuleType("cadquery")
+            cadquery.exporters = types.SimpleNamespace(
+                export=lambda model, path: Path(path).write_text(
+                    "cadquery\n",
+                    encoding="utf-8",
+                )
+            )
+            process = EngineBatchProcessRunner()
+            with patch.dict(sys.modules, {"cadquery": cadquery}):
+                self.assertEqual(
+                    execute_manifest(
+                        manifest,
+                        report,
+                        process=process,
+                    ),
+                    0,
+                )
+
+            self.assertEqual(len(process.calls), 1)
+            self.assertEqual(
+                process.calls[0][0],
+                "/opt/build123d/bin/python",
+            )
+            self.assertEqual(
+                process.calls[0][-2:],
+                ["--engine-builder", "build123d"],
+            )
+            self.assertEqual(
+                (root / "out/a/model.stl").read_text(encoding="utf-8"),
+                "isolated-build123d\n",
+            )
+            self.assertEqual(
+                (root / "out/b/model.stl").read_text(encoding="utf-8"),
+                "isolated-build123d\n",
+            )
+            self.assertEqual(cad_output.read_text(encoding="utf-8"), "cadquery\n")
+            result = json.loads(report.read_text(encoding="utf-8"))
+            self.assertEqual(
+                [row["status"] for row in result["models"]],
+                ["pass", "pass", "pass"],
             )
 
     def test_runtime_executes_all_models_and_writes_per_model_results(self):
@@ -326,7 +463,7 @@ class BuiltinBuilderBatchTests(unittest.TestCase):
                     {
                         "schema": 1,
                         "runtime": "reference",
-                        "batch_contract": 2,
+                        "batch_contract": 3,
                         "models": [
                             {
                                 "item_id": "a",

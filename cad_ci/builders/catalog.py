@@ -22,6 +22,7 @@ class BuiltinBuilder:
     runtime_role: str
     contract: int
     output: str = "model.stl"
+    engine_python: str | None = None
 
 
 BUILTIN_BUILDERS: dict[str, BuiltinBuilder] = {
@@ -29,6 +30,7 @@ BUILTIN_BUILDERS: dict[str, BuiltinBuilder] = {
         name="build123d",
         runtime_role="reference",
         contract=1,
+        engine_python="/opt/build123d/bin/python",
     ),
     "cadquery": BuiltinBuilder(
         name="cadquery",
@@ -38,7 +40,7 @@ BUILTIN_BUILDERS: dict[str, BuiltinBuilder] = {
 }
 
 RUNTIME_BATCH_CONTRACTS = {
-    "reference": 2,
+    "reference": 3,
 }
 
 
@@ -62,6 +64,7 @@ def runtime_catalog_signature(role: str) -> str:
             builder.name,
             builder.contract,
             builder.output,
+            builder.engine_python or "main",
         )
         for builder in BUILTIN_BUILDERS.values()
         if builder.runtime_role == role
@@ -69,8 +72,8 @@ def runtime_catalog_signature(role: str) -> str:
     if not rows:
         raise ValueError(f"unknown built-in runtime role: {role}")
     return ",".join(
-        f"{name}:{contract}:{output}"
-        for name, contract, output in rows
+        f"{name}:{contract}:{output}:{engine_python}"
+        for name, contract, output, engine_python in rows
     )
 
 
