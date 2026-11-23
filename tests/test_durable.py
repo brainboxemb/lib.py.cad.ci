@@ -151,6 +151,34 @@ class ResolveDurableScopeTests(unittest.TestCase):
                 missing_ok=True,
             )
 
+    def test_fetch_uses_selected_generated_build_branch(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            repo = root / "repo"
+            repo.mkdir()
+            out = root / "generated"
+
+            with patch(
+                "cad_ci.durable.materialize_generated_branch",
+                return_value=None,
+            ) as materialize:
+                state = fetch_durable_scope_state(
+                    repo=repo,
+                    generated_build=out,
+                    scope="dev-ci",
+                    source_sha=SHA_A,
+                    branch="test-output/build",
+                )
+
+            self.assertTrue(state.full_run)
+            materialize.assert_called_once_with(
+                source_repo=repo.resolve(),
+                branch="test-output/build",
+                out=out.resolve(),
+                remote="origin",
+                missing_ok=True,
+            )
+
     def test_fetch_missing_generated_branch_allows_first_main_publication(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -211,6 +239,7 @@ class PublishDurableScopeTests(unittest.TestCase):
                     state=state,
                     source_sha=SHA_A,
                     source_ref="dev-cad",
+                    build_branch="test-output/build",
                 )
 
             self.assertEqual(result, SHA_C)
@@ -228,6 +257,7 @@ class PublishDurableScopeTests(unittest.TestCase):
             self.assertEqual(publish_args["scope_name"], "lane")
             self.assertEqual(publish_args["expected_source"], SHA_A)
             self.assertEqual(publish_args["source_ref"], "dev-cad")
+            self.assertEqual(publish_args["branch"], "test-output/build")
 
     def test_first_named_scope_prepares_complete_processed_membership(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -337,6 +367,7 @@ class PublishDurableScopeTests(unittest.TestCase):
             update_named.assert_not_called()
             self.assertEqual(publish.call_args.kwargs["scope"], "main")
             self.assertIsNone(publish.call_args.kwargs["scope_name"])
+            self.assertEqual(publish.call_args.kwargs["branch"], "build")
 
     def test_inconsistent_state_fails_before_publication(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -428,6 +459,7 @@ class PublishDurablePagesTests(unittest.TestCase):
                     ("dev-cad", "dev-ci"),
                 )
                 self.assertIsNone(kwargs["name"])
+                self.assertEqual(kwargs["branch"], "test-output/gh-pages")
                 return SHA_B
 
             with (
@@ -445,6 +477,7 @@ class PublishDurablePagesTests(unittest.TestCase):
                     source_sha=SHA_A,
                     source_ref="main",
                     build_commit=SHA_C,
+                    pages_branch="test-output/gh-pages",
                 )
 
             self.assertEqual(result, SHA_B)
@@ -483,6 +516,7 @@ class PublishDurablePagesTests(unittest.TestCase):
             kwargs = publish.call_args.kwargs
             self.assertEqual(kwargs["name"], "dev-ci")
             self.assertEqual(kwargs["preserve_subtrees"], ())
+            self.assertEqual(kwargs["branch"], "gh-pages")
 
     def test_no_configured_pages_is_noop(self):
         with tempfile.TemporaryDirectory() as tmp:
