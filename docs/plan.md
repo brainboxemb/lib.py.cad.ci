@@ -110,7 +110,11 @@ Performance is part of the architecture, not a later optimization pass.
 - cache/current results must avoid runtime startup entirely;
 - cleanup must not introduce repeated planning/repository scans;
 - deterministic structural assertions are preferred over fragile wall-clock
-  thresholds in normal CI.
+  thresholds in normal CI;
+- development feedback time is also a performance constraint: prove contracts
+  at the cheapest reliable layer and keep Docker/real-engine/released-stack
+  checks out of the normal library loop unless that boundary itself is under
+  test.
 
 ## Boundary
 
