@@ -153,7 +153,7 @@ def _builders(value: object, path: Path) -> dict[str, Path]:
 
 
 def _publication_pages(value: object, path: Path) -> PagesPublication | None:
-    """Read optional root publication.pages configuration."""
+    """Read optional item-output or post-build Pages publication configuration."""
 
     if value is None:
         return None
@@ -173,7 +173,7 @@ def _publication_pages(value: object, path: Path) -> PagesPublication | None:
     if not isinstance(pages, dict):
         raise ConfigError(f"publication.pages must be a mapping: {path}")
 
-    invalid_pages = sorted(set(pages) - {"item", "output"})
+    invalid_pages = sorted(set(pages) - {"item", "builder", "output"})
     if invalid_pages:
         raise ConfigError(
             "publication.pages contains unsupported field(s): "
@@ -181,9 +181,22 @@ def _publication_pages(value: object, path: Path) -> PagesPublication | None:
         )
 
     item = pages.get("item")
-    if not isinstance(item, str) or not _ID.fullmatch(item):
+    builder = pages.get("builder")
+    if (item is None) == (builder is None):
+        raise ConfigError(
+            f"publication.pages requires exactly one of item or builder: {path}"
+        )
+    if item is not None and (
+        not isinstance(item, str) or not _ID.fullmatch(item)
+    ):
         raise ConfigError(
             f"publication.pages.item must be a valid item id: {path}"
+        )
+    if builder is not None and (
+        not isinstance(builder, str) or not _ID.fullmatch(builder)
+    ):
+        raise ConfigError(
+            f"publication.pages.builder must be a valid builder name: {path}"
         )
 
     output = pages.get("output")
@@ -200,10 +213,14 @@ def _publication_pages(value: object, path: Path) -> PagesPublication | None:
         or (parsed.parts and parsed.parts[0] == ".cad-ci")
     ):
         raise ConfigError(
-            f"publication.pages.output must be a safe item output: {path}"
+            f"publication.pages.output must be a safe output: {path}"
         )
 
-    return PagesPublication(item=item, output=parsed.as_posix())
+    return PagesPublication(
+        item=item,
+        builder=builder,
+        output=parsed.as_posix(),
+    )
 
 
 def _effective_item_config(
@@ -860,7 +877,7 @@ def load_repository_config(repo: Path) -> RepositoryConfig:
     _check_nested_item_output_roots(items)
     _check_cycles(items)
 
-    if pages is not None:
+    if pages is not None and pages.item is not None:
         try:
             pages_item = items[pages.item]
         except KeyError as exc:
@@ -882,7 +899,51 @@ def load_repository_config(repo: Path) -> RepositoryConfig:
                 f"{pages.item}: {pages.output}"
             )
 
-    return RepositoryConfig(items=items, pages=pages)
+    if pages is not None and pages.builder is not None:
+        try:
+            builder_path = builders[pages.builder]
+        except KeyError as exc:
+            raise ConfigError(
+                f"publication.pages references unknown builder: {pages.builder}"
+            ) from exc
+        steps, _ = _builder_steps(
+            repo,
+            pages.builder,
+            builder_path,
+            default_timeout,
+            Path("."),
+        )
+        if len(steps) != 1:
+            raise ConfigError(
+                "publication.pages builder requires exactly one command step: "
+                f"{pages.builder}"
+            )
+        step = steps[0]
+        if (
+            step.run is None
+            or step.copy is not None
+            or step.selection_context != "none"
+        ):
+            raise ConfigError(
+                "publication.pages builder requires one plain command step: "
+                f"{pages.builder}"
+            )
+        if pages.output not in step.outputs:
+            raise ConfigError(
+                "publication.pages.output is not declared by builder "
+                f"{pages.builder}: {pages.output}"
+            )
+        pages = replace(
+            pages,
+            builder_path=builder_path,
+            builder_step=step,
+        )
+
+    return RepositoryConfig(
+        items=items,
+        pages=pages,
+        variables=tuple(sorted(variables.items())),
+    )
 
 
 def load_repository(repo: Path) -> dict[str, Item]:
