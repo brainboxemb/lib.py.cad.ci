@@ -34,7 +34,7 @@ from cad_ci.scons.bundle import (
     remove_outputs,
     write_bundle,
 )
-from cad_ci.timing import utc_now
+from cad_ci.execution.timing import utc_now
 
 
 ROOT = Path.cwd().resolve()
