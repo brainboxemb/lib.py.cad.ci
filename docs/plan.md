@@ -17,17 +17,22 @@ Included owner changes:
 - #121 — recursive `/**` matching preserves wildcard prefixes;
 - #123 — repository-owned builders may request the root-pinned verification
   wheel through the public `verification_package: true` capability and
-  `CAD_CI_VERIFICATION_WHEEL` environment.
+  `CAD_CI_VERIFICATION_WHEEL` environment;
+- #128 — built-in CadQuery export accepts the documented `model` contract when
+  final geometry is a `cq.Assembly`, as required by the Forge #740 consumer
+  migration.
 
 Release requirements:
 
-1. VERSION and pyproject declare exactly 0.18.0;
-2. CHANGELOG records both public behavior changes;
-3. installed-wheel/SCons CI is green on the release PR;
-4. merge the release PR;
-5. verify immutable `v0.18.0` targets the exact tested release commit;
-6. repin/release the thin `tool.cad.ci`;
-7. black-box accept the exact tool/library pair before Forge #740 resumes.
+1. #128 is implemented and qualified without restoring consumer-owned CadQuery
+   export code or adding per-model runtime starts;
+2. VERSION and pyproject declare exactly 0.18.0;
+3. CHANGELOG records all public behavior changes;
+4. installed-wheel/SCons CI is green on the release PR;
+5. merge the release PR;
+6. verify immutable `v0.18.0` targets the exact tested release commit;
+7. repin/release the thin `tool.cad.ci`;
+8. black-box accept the exact tool/library pair before Forge #740 resumes.
 
 ## Accepted baseline before this release
 
@@ -43,7 +48,8 @@ Release requirements:
 
 | Issue | Status | Next |
 | --- | --- | --- |
-| #126 Publish lib.py.cad.ci 0.18.0 | **now** | Qualify, merge, verify immutable release, then repin tool. |
+| #128 Built-in CadQuery exports cq.Assembly | **now / blocks #126** | Define the generic Assembly export contract, implement it in the shared builder, and qualify Forge #755 without consumer exporter glue. |
+| #126 Publish lib.py.cad.ci 0.18.0 | **blocked on #128** | After #128 is qualified, publish the combined owner-contract release, verify immutable tag, then repin tool. |
 | #89 Align historical changelog | later / docs-only | Keep separate from the active Forge migration. |
 
 ## Performance boundary
