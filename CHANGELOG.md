@@ -1,5 +1,25 @@
 # Changelog
 
+## 0.18.0
+
+- preserve wildcard semantics in directory prefixes before trailing `/**`,
+  so patterns such as `examples/*/scpf/**` and
+  `models/*/*/*/scpf/**` select their intended nested source trees while
+  literal `folder/**` keeps folder-and-descendant behavior;
+- add repository-builder `verification_package: true` as a public
+  declarative capability backed by the existing single root
+  `verification.package` materialization;
+- expose the exact package wheel to requesting command steps through
+  `CAD_CI_VERIFICATION_WHEEL` inside their target-private dependency
+  snapshot, without exposing the internal synthesized package item id;
+- keep built-in verified CAD builders and repository-owned verification
+  builders on the same exact package target and normal SCons dependency
+  semantics;
+- reject verification-package requests on post-build Pages builders, which run
+  outside the SCons dependency graph;
+- keep SCons as the only freshness/cache engine and add no second repository
+  scan, package manager or runtime scheduler.
+
 ## 0.17.2
 
 - run the shared built-in CAD container as the host numeric UID:GID so files
