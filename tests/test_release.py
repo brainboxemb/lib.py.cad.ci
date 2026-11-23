@@ -1,9 +1,7 @@
+from importlib.metadata import files as distribution_files
 from importlib.util import module_from_spec, spec_from_file_location
 from pathlib import Path
-import os
-import shutil
 import subprocess
-import zipfile
 import tempfile
 import unittest
 
