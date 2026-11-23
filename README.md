@@ -25,6 +25,14 @@ second generic fingerprint/reuse engine beside SCons.
 `tool.cad.ci` is the thin CLI above this library. Real consumers own only
 their domain commands/checks and declarative `cad-ci.yml` / `ci.yml` files.
 
+## Consumer manual
+
+Configuration structure and copy-ready repository/item/builder examples live in
+[`docs/manual/`](docs/manual/README.md).
+
+GitHub Actions/workflow templates are intentionally owned by
+`tool.cad.ci/docs/manual/`; this library does not duplicate them.
+
 ## Design before implementation
 
 The generic contract is defined in:

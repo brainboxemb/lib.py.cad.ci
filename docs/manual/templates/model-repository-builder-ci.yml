@@ -1,0 +1,8 @@
+# Item using a repository-owned builder alias from root cad-ci.yml.
+
+id: example-repository-model
+builder: repository-model
+
+watch:
+  item:
+    - model.py

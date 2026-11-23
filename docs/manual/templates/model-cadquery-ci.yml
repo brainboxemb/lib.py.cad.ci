@@ -1,0 +1,8 @@
+# Item using the library-owned CadQuery builder.
+
+id: example-cadquery
+builder: cadquery
+
+watch:
+  item:
+    - model.py
