@@ -60,6 +60,9 @@ items:
   - tool
   - examples/*
 
+runtimes:
+  reference: ghcr.io/brainboxemb/cad-reference:v0.3.4
+
 builders:
   python-model: ci/builders/python-model
 ~~~
@@ -98,8 +101,8 @@ strategy:
   reuse: true
 ~~~
 
-The root builder alias resolves to a repository directory. That directory owns
-one `builder.yml`:
+A repository-owned root builder alias resolves to a repository directory.
+That directory owns one `builder.yml`:
 
 ~~~yaml
 schema: 1
@@ -124,6 +127,36 @@ steps:
 
 A shell command may expand `CAD_CI_BUILDER_PATH`; argv-style commands receive
 the same environment but do not perform shell expansion themselves.
+
+
+A normal item may instead select a reserved built-in builder:
+
+~~~yaml
+id: reference-build123d
+kind: model
+builder: build123d
+~~~
+
+Built-in resolution emits the same normal step graph. For the initial
+`build123d` / `cadquery` builders the normalized final step owns
+`model.stl`, uses the root `reference` runtime role and invokes the
+library-owned engine adapter with an explicit contract revision.
+
+The target specification includes:
+- built-in builder name;
+- built-in contract revision through the normalized command;
+- runtime role;
+- exact runtime image reference.
+
+`builder_path` remains empty for a built-in. The command environment adds
+`CAD_CI_RUNTIME` and `CAD_CI_RUNTIME_IMAGE` from the target specification.
+All normal item variables, dependency context and output handling remain
+unchanged.
+
+The engine adapter starts one runtime container for one requested built-in item.
+Docker/container execution is an implementation detail of that command action,
+not a new SCons target type. Container networking is disabled, repository source
+is read-only and only the target-private output root is writable.
 
 Rules:
 - `kind` is descriptive only;
