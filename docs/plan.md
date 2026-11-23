@@ -41,24 +41,28 @@ Required foundation:
 8. the hierarchy must reduce architectural reconstruction work for future
    maintainers/agents rather than add abstraction layers.
 
-### #110 — compose builders with consumer verification steps
+### #110 — compose generic builders with reusable CAD verification
 
 **Next after #108 / prerequisite for completing #106.**
 
-Keep root item templates as the consumer-owned profile/composition layer.
-A template may select a reusable builder and add ordered consumer-owned
-post-build verification steps. Do not hide verification policy inside generic
-build123d/CadQuery builders and do not introduce a second pipeline abstraction.
+Keep root item templates as the consumer-owned profile/configuration layer.
+A template may select a reusable builder plus a first-class declarative
+`verification` contract.
 
-The effective item contract becomes:
+Ownership is explicit:
 
-- steps only;
-- builder only;
-- builder + post-build steps.
+- `lib.py.cad.ci` owns the SCons graph, batching, builder/runtime integration,
+  declarative verification configuration and the thin verification-stage
+  adapter;
+- `lib.py.cad.verification` owns reusable verification mechanics and
+  CAD-engine-specific verification adapters;
+- Forge/consumer repositories own only model-specific verification data such as
+  expected values, tolerances, views, mutations and reference geometry.
 
-Builder execution lowers first; item/template steps follow in the same normal
-SCons item graph. This must preserve shared-batch runtime cardinality and current
-/cache behavior.
+CAD-CI lowers build -> verify into the same normal SCons graph and calls the
+existing verification library. Forge must not retain generic verification
+scripts/batch glue. Shared-batch runtime cardinality and current/cache behavior
+must remain unchanged.
 
 ### #106 — extract reusable batched CAD builders from Forge
 
@@ -119,7 +123,7 @@ Execution order:
 | Issue | Status | Next |
 | --- | --- | --- |
 | #108 Harden library package foundation before further CAD builder work | **now** | Complete canonical package hierarchy, process boundary, packaging/manual/test contracts and performance invariants. |
-| #110 Compose declarative builders with consumer post-build verification steps | **next after #108** | Make template profiles able to select a builder and append verification without changing batching ownership. |
+| #110 Compose generic CAD builders with reusable CAD verification | **next after #108** | Add first-class declarative verification wiring from CAD-CI into lib.py.cad.verification without Forge-owned generic scripts. |
 | #106 Extract reusable batched CAD builders from Forge | **blocked by #108/#110** | Resume after foundation and builder+verification composition are accepted. |
 | #89 Align historical changelog | **later / docs-only** | Apply shared changelog presentation without runtime/API changes. |
 
