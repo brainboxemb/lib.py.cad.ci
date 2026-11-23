@@ -41,10 +41,13 @@ class Step:
 
 @dataclass(frozen=True)
 class PagesPublication:
-    """One configured Pages site output owned by a processed item."""
+    """One configured Pages source: normal item output or publication builder."""
 
-    item: str
     output: str
+    item: str | None = None
+    builder: str | None = None
+    builder_path: Path | None = None
+    builder_step: Step | None = None
 
 
 @dataclass(frozen=True)
@@ -53,6 +56,7 @@ class RepositoryConfig:
 
     items: dict[str, "Item"]
     pages: PagesPublication | None = None
+    variables: tuple[tuple[str, str], ...] = ()
 
 
 @dataclass(frozen=True)
