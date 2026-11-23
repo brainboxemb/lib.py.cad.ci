@@ -47,13 +47,16 @@ def _export(builder: str, model, output: Path) -> None:
 
         export_stl(getattr(model, "part", model), str(output))
     elif builder == "cadquery":
-        from cadquery import exporters
+        import cadquery
 
-        # CadQuery Assembly owns its STL export path. Shape/Workplane-style
-        # values continue through the normal exporters module.
-        export = getattr(model, "export", None)
-        if callable(export):
-            export(str(output), exportType="STL")
+        exporters = cadquery.exporters
+        assembly_type = getattr(cadquery, "Assembly", None)
+
+        # Assembly owns its STL export path. Workplane/Shape-style values can
+        # also expose an export method, so callable(model.export) is not a safe
+        # discriminator; those values remain on the normal exporters module.
+        if assembly_type is not None and isinstance(model, assembly_type):
+            model.export(str(output), exportType="STL")
         else:
             exporters.export(model, str(output))
     else:

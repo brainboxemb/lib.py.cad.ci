@@ -2,56 +2,42 @@
 
 Current source of truth for unfinished work in `lib.py.cad.ci` (2026-11-23).
 
-## Release candidate
+## Current owner fix
 
-### #130 — publish 0.18.1 with CadQuery Assembly export fix
+### #132 — restrict model-owned CadQuery export to cq.Assembly
 
 **Now.**
 
 Released baseline:
 
-- `lib.py.cad.ci v0.18.0` is published at
-  `eb291abd6bb34b585d04019d154e7756d36436f9`;
-- v0.18.0 contains #121 wildcard-prefix matching and #123 the public
-  repository-builder verification-package capability;
-- #128 merged afterward on `main` as
-  `23e1bf7175a68565edf7ca063f68cd9db1b4b083`;
-- therefore v0.18.0 must not be moved or rewritten.
+- `lib.py.cad.ci v0.18.1` @
+  `6064a53b9ea1c340d49893ca0f8d1fa5e3e138ea`;
+- v0.18.1 correctly enables real `cq.Assembly` export but external acceptance
+  found that its callable-`.export` detection also captures normal
+  `cq.Workplane` values.
 
-0.18.1 contains only the compatible built-in CadQuery export correction from
-#128:
+External evidence from tool.cad.ci.test #248 / PR #249:
 
-- final geometry exposed as `cq.Assembly` uses its supported model-owned
-  `export(..., exportType="STL")` path;
-- ordinary exporter-compatible CadQuery models retain
-  `cadquery.exporters.export`;
-- build123d/CadQuery keep the existing one shared reference runtime/container
-  and no consumer-owned exporter is reintroduced.
+- root 019 real `cq.Assembly`: PASS;
+- existing root 017 real `cq.Workplane`: FAIL with
+  `TypeError: Workplane.export() got an unexpected keyword argument 'exportType'`.
 
-Release requirements:
+Required correction:
 
-1. VERSION and pyproject declare exactly 0.18.1;
-2. CHANGELOG records the #128 behavior correction;
-3. installed-wheel/SCons CI is green on the exact release PR;
-4. merge the tested release PR;
-5. verify `v0.18.1` targets the exact tested merge commit;
-6. repin the thin `tool.cad.ci` from v0.34.0/lib 0.18.0 to the exact 0.18.1
-   commit in a new tool release;
-7. black-box accept the exact tool/library pair before Forge #740 resumes.
-
-## Accepted baseline before this release
-
-- `lib.py.cad.ci v0.18.0` @
-  `eb291abd6bb34b585d04019d154e7756d36436f9`;
-- `tool.cad.ci v0.34.0` consumes that exact library release;
-- `lib.py.cad.verification v0.16.0` @
-  `c7c145b7be0c602724e8cca874ef29990baaad1e`.
+1. select model-owned `export(..., exportType="STL")` only for actual
+   `cadquery.Assembly` instances;
+2. keep Workplane/Shape and other normal exporter-compatible values on
+   `cadquery.exporters.export`;
+3. retain one shared reference runtime/container and current SCons behavior;
+4. add a regression proving a non-Assembly object with a callable `.export`
+   still uses the normal exporters module;
+5. after merge, publish a new patch release without moving v0.18.1.
 
 ## Open issue assessment
 
 | Issue | Status | Next |
 | --- | --- | --- |
-| #130 Publish lib.py.cad.ci 0.18.1 | **now** | Qualify, merge and verify the immutable release, then repin the thin tool. |
+| #132 Restrict model-owned CadQuery export to cq.Assembly | **now** | Fix type discrimination, qualify, then publish a new patch release and repin the thin tool. |
 | #89 Align historical changelog | later / docs-only | Keep separate from the active Forge migration. |
 
 ## Performance boundary
@@ -59,6 +45,5 @@ Release requirements:
 - SCons remains the only rebuild/reuse engine;
 - source inventory remains one enumeration per run;
 - verification package remains one shared target;
-- only requesting repository builders gain that dependency;
 - build123d/CadQuery compatible models remain one shared reference runtime;
-- current/cache results avoid unnecessary package/runtime work.
+- the fix changes only per-model CadQuery export dispatch inside that runtime.
