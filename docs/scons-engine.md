@@ -137,26 +137,47 @@ kind: model
 builder: build123d
 ~~~
 
-Built-in resolution emits the same normal step graph. For the initial
-`build123d` / `cadquery` builders the normalized final step owns
-`model.stl`, uses the root `reference` runtime role and invokes the
-library-owned engine adapter with an explicit contract revision.
+The item does not contain runtime/batch/copy implementation. Configuration
+lowering attaches it to one internal shared producer for the built-in's runtime
+role and gives the item one normal dependency-copy projection step.
 
-The target specification includes:
-- built-in builder name;
-- built-in contract revision through the normalized command;
-- runtime role;
-- exact runtime image reference.
+For the initial catalog:
 
-`builder_path` remains empty for a built-in. The command environment adds
-`CAD_CI_RUNTIME` and `CAD_CI_RUNTIME_IMAGE` from the target specification.
-All normal item variables, dependency context and output handling remain
-unchanged.
+~~~text
+build123d -> reference runtime
+cadquery  -> reference runtime
+~~~
 
-The engine adapter starts one runtime container for one requested built-in item.
-Docker/container execution is an implementation detail of that command action,
-not a new SCons target type. Container networking is disabled, repository source
-is read-only and only the target-private output root is writable.
+Both therefore share one producer when active in the same run.
+
+The producer is an ordinary internal Item/Step node. Its command step uses
+`selection_context: direct_dependents`, so the existing active graph supplies
+the exact requested model ids through `CAD_CI_ACTIVE_DEPENDENTS_JSON`. The
+producer's signature includes that set, its runtime role/image and its resolved
+model/config inputs.
+
+The producer command writes one batch manifest, starts the configured runtime
+once, processes all active compatible models in that runtime process, and writes
+results below:
+
+~~~text
+items/<item path>/model.stl
+~~~
+
+Each public model item then uses the existing `copy: dependency` action to
+project its own `model.stl`. SCons therefore still sees only normal targets,
+dependencies, signatures and bundles.
+
+The producer command environment includes:
+
+~~~text
+CAD_CI_RUNTIME
+CAD_CI_RUNTIME_IMAGE
+CAD_CI_ACTIVE_DEPENDENTS_JSON
+~~~
+
+The child model retains `CAD_CI_BUILDER` identity in its normal target
+signature; `builder_path` is absent for built-ins.
 
 Rules:
 - `kind` is descriptive only;

@@ -14,10 +14,13 @@ publication mechanics and reusable CAD engine invocation/export builders belong
 here.
 
 Generic engine adapters such as build123d or CadQuery may be built-in when they
-only define reusable execution/export behavior. Consumer semantics do not move
-with them: Forge stages/API contracts, model-specific geometry expectations,
-SolidCraft verification definitions, presentation policy and other CAD-domain
-checks remain in their owning consumer/verification repositories.
+only define reusable execution/export behavior. Their shared batch producer and
+normal dependency-copy projection are generic builder mechanics and belong here;
+model templates must not repeat that execution plumbing. Consumer semantics do
+not move with them: Forge stages/API contracts, model-specific geometry
+expectations, SolidCraft verification definitions, presentation policy and
+other CAD-domain checks remain in their owning consumer/verification
+repositories.
 
 SCons is the only generic rebuild/reuse engine. Do not add a parallel custom
 fingerprint, dependency execution or reuse engine.

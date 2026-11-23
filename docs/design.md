@@ -68,72 +68,76 @@ Configuration is validated once when the repository is loaded. The resulting
 immutable item model carries all execution-significant repository settings
 needed to construct the SCons graph.
 
+
 ## Built-in CAD builder resolution
 
-Builder resolution has two explicit sources:
+Builder resolution has two sources:
 
 ```text
 item builder name
-  -> built-in catalog?      -> library-owned normalized Step(s)
+  -> built-in catalog?      -> generic shared-batch lowering
   -> repository alias?      -> <builder directory>/builder.yml
   -> otherwise              -> configuration error
 ```
 
-Built-in names are reserved. Root `builders:` validation rejects an alias
-whose name is owned by the built-in catalog, so precedence is never implicit.
+Built-in names are reserved. Root `builders:` validation rejects aliases that
+would shadow them.
 
-The initial catalog metadata records:
+The initial catalog records:
 
 ```text
-name       runtime role   contract revision   output
-build123d  reference      1                   model.stl
-cadquery   reference      1                   model.stl
+name       runtime role   builder contract   output
+build123d  reference      1                  model.stl
+cadquery   reference      1                  model.stl
 ```
 
-The loader turns that metadata into the same immutable item/step objects used
-for repository-owned builders. Built-in items carry no repository builder path,
-so `CAD_CI_BUILDER_PATH` is empty and no consumer builder directory is added
-to the watch/input set.
-
-Root runtime configuration is separate from repository variables:
+Root runtime configuration remains explicit:
 
 ```yaml
 runtimes:
   reference: ghcr.io/brainboxemb/cad-reference:v0.3.4
 ```
 
-The loaded item records the required role and resolved exact image reference.
-Both are serialized into every target specification. This makes an image change
-dirty without pretending the image is an ordinary consumer command variable.
+### Lowering to the already-proven batch graph
 
-The normalized built-in command contains the built-in contract revision, for
-example conceptually:
+The loader does not create a second execution model. For every built-in model it
+creates the same graph consumers such as Forge already use manually:
 
-```text
-python -m cad_ci.cad_builder build123d --contract 1
-```
+1. the model keeps its own public item identity and selected builder;
+2. compatible built-ins are attached to one internal producer for their runtime
+   role;
+3. the producer uses `selection_context: direct_dependents`;
+4. the model depends on that producer and receives only its own result through a
+   normal `copy: dependency` step;
+5. SCons sees ordinary Item/Step/dependency nodes.
 
-The existing SCons signature therefore changes when the built-in implementation
-contract changes, even if consumer files and runtime image are unchanged.
+For the initial catalog both engines share the `reference` producer. A
+one-model incremental request therefore starts the producer once with that one
+model in `CAD_CI_ACTIVE_DEPENDENTS_JSON`; a request containing build123d and
+CadQuery models still starts that compatible reference runtime only once.
 
-At action time the library-owned command adapter:
+The producer target signature contains its runtime role/image, batch contract,
+resolved model/config inputs and active-dependent set. The existing #83
+semantics therefore prevent a partial batch for one consumer set from appearing
+current for a different set.
 
-1. validates the item-local `model.py`;
-2. invokes the normal Docker CLI using the resolved immutable runtime image;
-3. mounts the repository read-only at `/repo`;
-4. mounts only the target-private `CAD_CI_OUTPUT` read/write at `/output`;
-5. uses the item path as the container working directory;
-6. disables container networking;
-7. executes one engine-specific, domain-neutral model/export script;
-8. leaves normal output validation/evidence to the existing SCons driver.
+At action time the library-owned producer:
+
+1. reads the already-computed active model ids;
+2. resolves their item paths and selected built-in builders;
+3. writes one batch manifest;
+4. starts the configured runtime once;
+5. executes the active cases sequentially in that runtime process;
+6. writes per-model outputs below `items/<item path>/`;
+7. writes aggregate batch evidence;
+8. lets the existing dependency-copy action project each model's declared
+   output.
 
 The runtime image owns build123d/CadQuery installations. This package does not
-add those engines as Python dependencies.
+add those engines as normal Python dependencies.
 
-The first release is single-item execution only. It intentionally does not
-replace high-cardinality batch consumers without performance proof. Any future
-batch adapter must use the existing active-graph context and remain in this
-generic owner layer rather than moving engine code back into Forge.
+This mechanism contains no Forge stages, geometry acceptance, reference
+comparison, preview or site policy.
 
 ## Durable publication configuration
 
@@ -369,9 +373,10 @@ Builder names and paths are included in the SCons target specification. This
 makes moving an item to another implementation an explicit execution-significant
 change even when the resulting command text happens to be identical.
 
-No built-in SolidCraft/OpenSCAD/Forge builder is introduced here. A later
-domain tool may ship a versioned builder directory, but generic CAD-CI only
-loads the repository path selected by configuration.
+Repository-owned builders continue to resolve from their versioned directories.
+Built-in generic engine builders use the catalog/shared-batch lowering described
+above. No Forge API, SolidCraft verification or model-specific domain builder is
+implicitly introduced by that catalog.
 
 ## Local nested item composition
 
