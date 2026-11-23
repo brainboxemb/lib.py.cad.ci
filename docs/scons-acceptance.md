@@ -585,6 +585,47 @@ Expected:
 - PR 1 update preserves stable and PR 2;
 - PR 1 cleanup preserves stable and PR 2.
 
+## Case 24A - post-build Pages renderer
+
+Root configuration maps `pages-site` to one repository-owned builder and
+configures:
+
+```yaml
+publication:
+  pages:
+    builder: pages-site
+    output: site
+```
+
+The builder contains exactly one command step declaring `site`.
+
+Expected:
+
+1. the normal selected CAD-CI graph runs once and finishes before publication;
+2. the complete durable scope is prepared and published before the renderer
+   starts;
+3. the renderer receives the materialized complete scope, logical scope,
+   source SHA/ref and the exact generated build commit;
+4. it receives one fresh temporary `CAD_CI_OUTPUT` and runs from the
+   repository root;
+5. successful `site` output is validated with the normal safe output rules,
+   then generic `provenance.json` is written and existing stable/named Pages
+   preservation semantics apply;
+6. the renderer is not a SCons target and creates no second CAD-CI graph,
+   target bundle or cache record;
+7. non-zero exit, timeout, missing output or symlink/unsafe output fails Pages
+   publication after build publication and does not rewrite the generated build
+   commit;
+8. item/output Pages mode retains its existing behavior.
+
+Invalid configuration is rejected when:
+- both `item` and `builder` are configured;
+- neither is configured;
+- the builder alias is unknown;
+- the publication builder contains multiple steps;
+- its step is a copy action rather than a command;
+- the configured output is not declared by the command step.
+
 ## Case 25 - source freshness and publication race
 
 Publication uses expected source SHA.

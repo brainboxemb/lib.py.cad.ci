@@ -63,7 +63,9 @@ consumer repository or a separately versioned domain tool, not this library.
 
 ### Durable publication source
 
-Root `cad-ci.yml` may optionally identify one generated Pages site:
+Root `cad-ci.yml` may optionally identify one generated Pages site.
+
+The existing item-output mode remains supported:
 
 ```yaml
 publication:
@@ -77,6 +79,43 @@ The referenced item:
 - owns its build implementation through the normal item/builder contract;
 - must declare the configured output exactly as one of its step outputs.
 
+A repository that needs authoritative complete-scope/build-commit provenance
+during rendering may instead select one repository-owned builder:
+
+```yaml
+builders:
+  pages-site: ci/builders/pages-site
+
+publication:
+  pages:
+    builder: pages-site
+    output: site
+```
+
+The two Pages modes are mutually exclusive. `publication.pages` configures
+exactly one of `item` or `builder`, plus one safe `output`.
+
+For publication-builder mode:
+- the alias must resolve through the normal root `builders:` mapping;
+- the referenced `builder.yml` contains exactly one command step;
+- copy actions and multiple steps are rejected for this one-shot publication
+  boundary;
+- the configured Pages output must be declared by that command step;
+- the command runs once **after** the complete durable build scope has been
+  published and the exact generated build commit exists;
+- it is not a SCons target and has no cache/reuse/freshness semantics;
+- it runs from the repository root with one fresh temporary
+  `CAD_CI_OUTPUT` directory;
+- it receives CAD-CI-owned environment values
+  `CAD_CI_COMPLETE_SCOPE`, `CAD_CI_BUILD_SCOPE`,
+  `CAD_CI_SOURCE_SHA`, `CAD_CI_SOURCE_REF` and
+  `CAD_CI_BUILD_COMMIT`, plus `CAD_CI_BUILDER` /
+  `CAD_CI_BUILDER_PATH` and validated repository variables;
+- command failure, timeout or missing/unsafe declared output fails Pages
+  publication after the build commit has already been published;
+- the already-published durable build commit is never rewritten as part of a
+  renderer retry/failure.
+
 The publication block is declarative metadata only. It contains no executable
 command, Git branch name or GitHub-specific setting.
 
@@ -89,14 +128,19 @@ with path separators such as `test-output/build` and
 they do not change complete-scope names, manifest layout, Pages subtree layout
 or provenance semantics.
 
-For a materialized complete `main` or named scope, CAD-CI resolves the Pages
-site as:
+For item-output mode, CAD-CI resolves the Pages site from a materialized
+complete `main` or named scope as:
 
 ```text
 <complete scope>/<item source path>/<configured output>
 ```
 
 The resolved path must be a directory when Pages publication is requested.
+
+For publication-builder mode, the renderer reads the same already-prepared
+complete scope through `CAD_CI_COMPLETE_SCOPE`, writes only below its
+temporary `CAD_CI_OUTPUT`, and the configured output must be a directory
+after the command completes.
 
 The existing durable lifecycle remains authoritative:
 - if the generated build branch does not yet exist, either stable `main` or a
@@ -107,17 +151,20 @@ The existing durable lifecycle remains authoritative:
 - with an existing complete scope, only selected replacements are taken from
   the local candidate while current configured membership remains authoritative.
 
-After build-scope publication, configured Pages publication uses a temporary
-copy of the generated site and writes generic `provenance.json` containing
-the source commit, published build-branch commit and complete scope name. The
-durable build output itself is not mutated after publication.
+After build-scope publication, configured Pages publication obtains the site
+from either the existing item output or the one-shot publication builder,
+copies/uses a temporary publication tree and writes generic `provenance.json`
+containing the source commit, published build-branch commit and complete scope
+name. The durable build output itself is not mutated after publication.
 
 Named Pages replaces only its own safe subtree. Stable Pages automatically
 preserves subtrees whose names correspond to valid named complete scopes in the
 materialized generated build tree, as well as the existing PR preview area.
 
-This lifecycle does not run SCons or build a domain site. Those responsibilities
-remain with the existing planner/runner and the consumer-owned builder.
+This lifecycle never starts a second SCons/CAD-CI graph. Normal item-output
+sites remain owned by the existing planner/runner. Publication-builder mode
+executes only the configured repository-owned one-shot renderer after durable
+build publication; generic CAD-CI does not interpret domain site semantics.
 
 ### Repository variables
 

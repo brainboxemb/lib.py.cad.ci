@@ -31,6 +31,7 @@ from .git_publish import (
     publish_build_scope,
     publish_pages,
 )
+from .pages_renderer import render_pages_builder
 from .planner import affected_items
 
 
@@ -275,11 +276,11 @@ def publish_durable_scope(
 
 
 def configured_pages_site(repo: Path, complete_scope: Path) -> Path | None:
-    """Return the configured Pages directory inside one complete scope."""
+    """Return an item-backed Pages directory inside one complete scope."""
 
     repository = load_repository_config(repo.resolve())
     pages = repository.pages
-    if pages is None:
+    if pages is None or pages.item is None:
         return None
     item = repository.items[pages.item]
     site = complete_scope.resolve() / item.path / pages.output
@@ -342,8 +343,9 @@ def publish_durable_pages(
     if not source_ref:
         raise BuildStoreError("source_ref is required for durable Pages publication")
 
-    site = configured_pages_site(repo, prepared_scope)
-    if site is None:
+    repository = load_repository_config(repo)
+    pages = repository.pages
+    if pages is None:
         return None
 
     scope, manifest_scope, _ = _scope_name(state.scope)
@@ -354,7 +356,29 @@ def publish_durable_pages(
     name = None if manifest_scope == "main" else scope
 
     with tempfile.TemporaryDirectory(prefix="cad-ci-pages-") as tmp:
-        publish_site = Path(tmp) / "site"
+        temp_root = Path(tmp)
+        if pages.item is not None:
+            item = repository.items[pages.item]
+            site = prepared_scope.resolve() / item.path / pages.output
+            if not site.is_dir():
+                raise BuildStoreError(
+                    "configured Pages output is not a directory in complete scope: "
+                    f"{pages.item}:{pages.output}"
+                )
+        else:
+            site = render_pages_builder(
+                repo=repo,
+                publication=pages,
+                complete_scope=prepared_scope,
+                build_scope=scope,
+                source_sha=source_sha,
+                source_ref=source_ref,
+                build_commit=build_commit,
+                output_root=temp_root / "render",
+                variables=repository.variables,
+            )
+
+        publish_site = temp_root / "site"
         shutil.copytree(site, publish_site)
         (publish_site / "provenance.json").write_text(
             json.dumps(

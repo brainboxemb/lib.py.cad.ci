@@ -396,10 +396,15 @@ class PublishDurablePagesTests(unittest.TestCase):
         return SimpleNamespace(
             items={"site": SimpleNamespace(path=Path("site"))},
             pages=(
-                SimpleNamespace(item="site", output="site")
+                SimpleNamespace(
+                    item="site",
+                    builder=None,
+                    output="site",
+                )
                 if pages
                 else None
             ),
+            variables=(),
         )
 
     def test_configured_pages_site_resolves_complete_scope_output(self):
@@ -517,6 +522,89 @@ class PublishDurablePagesTests(unittest.TestCase):
             self.assertEqual(kwargs["name"], "dev-ci")
             self.assertEqual(kwargs["preserve_subtrees"], ())
             self.assertEqual(kwargs["branch"], "gh-pages")
+
+    def test_builder_pages_render_after_exact_build_commit(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            repo = root / "repo"
+            repo.mkdir()
+            prepared = root / "prepared"
+            prepared.mkdir()
+            generated = root / "generated"
+            generated.mkdir()
+
+            from types import SimpleNamespace
+
+            repository = SimpleNamespace(
+                items={},
+                pages=SimpleNamespace(
+                    item=None,
+                    builder="pages-site",
+                    output="site",
+                ),
+                variables=(("SITE_MODE", "accepted"),),
+            )
+
+            def render(**kwargs):
+                self.assertEqual(kwargs["complete_scope"], prepared)
+                self.assertEqual(kwargs["build_scope"], "dev-ci")
+                self.assertEqual(kwargs["source_sha"], SHA_A)
+                self.assertEqual(kwargs["source_ref"], "dev-ci")
+                self.assertEqual(kwargs["build_commit"], SHA_C)
+                self.assertEqual(
+                    kwargs["variables"],
+                    (("SITE_MODE", "accepted"),),
+                )
+                site = kwargs["output_root"] / "site"
+                site.mkdir(parents=True)
+                (site / "index.html").write_text(
+                    "rendered",
+                    encoding="utf-8",
+                )
+                return site.resolve()
+
+            def publish(**kwargs):
+                self.assertEqual(
+                    (kwargs["site"] / "index.html").read_text(encoding="utf-8"),
+                    "rendered",
+                )
+                provenance = json.loads(
+                    (kwargs["site"] / "provenance.json").read_text(
+                        encoding="utf-8"
+                    )
+                )
+                self.assertEqual(provenance["source_commit"], SHA_A)
+                self.assertEqual(provenance["build_commit"], SHA_C)
+                self.assertEqual(provenance["build_scope"], "dev-ci")
+                self.assertEqual(kwargs["name"], "dev-ci")
+                return SHA_B
+
+            with (
+                patch(
+                    "cad_ci.durable.load_repository_config",
+                    return_value=repository,
+                ),
+                patch(
+                    "cad_ci.durable.render_pages_builder",
+                    side_effect=render,
+                ) as renderer,
+                patch(
+                    "cad_ci.durable.publish_pages",
+                    side_effect=publish,
+                ),
+            ):
+                result = publish_durable_pages(
+                    repo=repo,
+                    generated_build=generated,
+                    prepared_scope=prepared,
+                    state=DurableScopeState("dev-ci", SHA_B, False, True),
+                    source_sha=SHA_A,
+                    source_ref="dev-ci",
+                    build_commit=SHA_C,
+                )
+
+            self.assertEqual(result, SHA_B)
+            renderer.assert_called_once()
 
     def test_no_configured_pages_is_noop(self):
         with tempfile.TemporaryDirectory() as tmp:
