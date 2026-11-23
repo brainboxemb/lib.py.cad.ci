@@ -41,9 +41,28 @@ Required foundation:
 8. the hierarchy must reduce architectural reconstruction work for future
    maintainers/agents rather than add abstraction layers.
 
+### #110 — compose builders with consumer verification steps
+
+**Next after #108 / prerequisite for completing #106.**
+
+Keep root item templates as the consumer-owned profile/composition layer.
+A template may select a reusable builder and add ordered consumer-owned
+post-build verification steps. Do not hide verification policy inside generic
+build123d/CadQuery builders and do not introduce a second pipeline abstraction.
+
+The effective item contract becomes:
+
+- steps only;
+- builder only;
+- builder + post-build steps.
+
+Builder execution lowers first; item/template steps follow in the same normal
+SCons item graph. This must preserve shared-batch runtime cardinality and current
+/cache behavior.
+
 ### #106 — extract reusable batched CAD builders from Forge
 
-**Blocked on #108.**
+**Blocked on #108 and #110.**
 
 Forge already proves the required execution shape: one normal CAD-CI/SCons
 graph, one shared producer, signature-safe active dependent context, one runtime
@@ -100,7 +119,8 @@ Execution order:
 | Issue | Status | Next |
 | --- | --- | --- |
 | #108 Harden library package foundation before further CAD builder work | **now** | Complete canonical package hierarchy, process boundary, packaging/manual/test contracts and performance invariants. |
-| #106 Extract reusable batched CAD builders from Forge | **blocked by #108** | Resume only after the library foundation PR is merged and green. |
+| #110 Compose declarative builders with consumer post-build verification steps | **next after #108** | Make template profiles able to select a builder and append verification without changing batching ownership. |
+| #106 Extract reusable batched CAD builders from Forge | **blocked by #108/#110** | Resume after foundation and builder+verification composition are accepted. |
 | #89 Align historical changelog | **later / docs-only** | Apply shared changelog presentation without runtime/API changes. |
 
 ## Performance boundary
