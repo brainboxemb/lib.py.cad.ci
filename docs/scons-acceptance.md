@@ -159,10 +159,14 @@ With one active build123d model and one active CadQuery model:
    writable;
 4. both model sources execute in that same runtime process;
 5. build123d and CadQuery each write their own canonical `model.stl`;
-6. the producer writes per-model pass/error rows plus aggregate status;
-7. failure of one case does not prevent a later case from being attempted;
-8. any case failure fails the producer target overall;
-9. normal dependency-copy validation projects only the requested model's
+6. the CadQuery case is exercised twice at conformance level: once with a
+   normal exporter-compatible model and once with an Assembly-like model whose
+   own `export(..., exportType="STL")` path must be used; both remain inside the
+   same shared runtime batch;
+7. the producer writes per-model pass/error rows plus aggregate status;
+8. failure of one case does not prevent a later case from being attempted;
+9. any case failure fails the producer target overall;
+10. normal dependency-copy validation projects only the requested model's
    declared output.
 
 ## Case 2D - batch selection/cache safety
