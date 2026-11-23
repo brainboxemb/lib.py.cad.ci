@@ -75,6 +75,25 @@ owner logic -> runtime/tool adapter -> process adapter -> subprocess
 Unit tests normally replace the process adapter, not `subprocess.run`
 throughout owner modules.
 
+## Development-cycle performance
+
+Test cost is part of the system performance budget.
+
+- prove a contract at the cheapest reliable layer;
+- unit/structural tests are the default for owner logic and architecture
+  invariants;
+- use real SCons only when SCons behavior is the subject of the contract;
+- do not start Docker or real CAD engines in the normal library suite for
+  behavior that a fake adapter can prove;
+- keep released-stack/container acceptance in `tool.cad.ci.test`;
+- avoid duplicate assertions of the same contract across multiple expensive
+  layers;
+- prefer deterministic call-count/graph assertions over timing sleeps or
+  wall-clock thresholds.
+
+A new test must justify its maintenance/runtime cost by protecting a distinct
+regression risk or public contract.
+
 ## Maintenance checklist
 
 When changing behaviour:
