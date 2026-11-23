@@ -830,3 +830,29 @@ verification.
 External child-process startup crosses the existing
 `cad_ci.execution.process.ProcessRunner` boundary so normal tests can prove
 one process per engine group without starting a real interpreter.
+
+## Host ownership for bind-mounted CAD outputs
+
+Issue #118 fixes a rebuild failure discovered by released-stack acceptance.
+The immutable runtime image defaults to root. Without an explicit Docker user,
+the first successful build creates root-owned directories below the host
+`build/.cad-ci-runtime/<role>/items` tree; the next SCons invalidation cannot
+remove those outputs.
+
+`cad_ci.builders.batch` therefore resolves the host numeric UID:GID once per
+runtime invocation and adds:
+
+```text
+docker run
+  --user <uid>:<gid>
+  -e HOME=/tmp
+  ...
+```
+
+No ownership-repair command is added. The same user identity applies to the main
+runtime Python and its isolated engine child process because the child is
+spawned inside that container.
+
+The host batch remains the only Docker launcher. Normal tests assert command
+shape with the existing fake process runner; real output ownership is proven by
+the cold/current/rebuild sequence in `tool.cad.ci.test`.
