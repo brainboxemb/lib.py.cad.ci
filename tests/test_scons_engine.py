@@ -1134,7 +1134,7 @@ active = json.loads(os.environ["CAD_CI_ACTIVE_DEPENDENTS_JSON"])
                     / "build/batch/.cad-ci/steps/build.json"
                 ).read_text()
             )
-            self.assertEqual(public["schema"], 5)
+            self.assertEqual(public["schema"], 6)
             self.assertEqual(
                 public["active_dependents"],
                 ["consumer-a", "consumer-b"],
@@ -1326,7 +1326,7 @@ for name in ("consumer-a", "consumer-b"):
             )
 
             report = json.loads((root / REPORT_PATH).read_text())
-            self.assertEqual(report["schema_version"], 6)
+            self.assertEqual(report["schema_version"], 7)
             self.assertEqual(report["jobs"], 1)
             self.assertRegex(report["started_at"], UTC_TIMESTAMP)
             self.assertRegex(report["finished_at"], UTC_TIMESTAMP)
@@ -1344,7 +1344,7 @@ for name in ("consumer-a", "consumer-b"):
 
             step_path = root / "build/item/.cad-ci/steps/build.json"
             step = json.loads(step_path.read_text())
-            self.assertEqual(step["schema"], 5)
+            self.assertEqual(step["schema"], 6)
             self.assertEqual(step["run_started_at"], report["started_at"])
             self.assertEqual(step["run_finished_at"], report["finished_at"])
             self.assertEqual(step["started_at"], built["started_at"])
