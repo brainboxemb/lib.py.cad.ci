@@ -169,6 +169,41 @@ class VerificationGraphTests(unittest.TestCase):
                 ["a-reference:build"],
             )
 
+            first_digest = specs["cad-ci-runtime-reference:build"][
+                "target_spec_digest"
+            ]
+            root_config = root / "cad-ci.yml"
+            root_config.write_text(
+                root_config.read_text(encoding="utf-8").replace(
+                    "      adapter: mesh-geometry\n",
+                    "      adapter: mesh-geometry\n"
+                    "      id: shared-geometry\n",
+                ),
+                encoding="utf-8",
+            )
+            changed_items = load_repository(root)
+            changed_request = resolve_request(
+                changed_items,
+                {"a-reference", "b-reference"},
+            )
+            changed_path = write_manifest(
+                root,
+                changed_items,
+                changed_request,
+            )
+            changed_manifest = json.loads(
+                changed_path.read_text(encoding="utf-8")
+            )
+            changed_specs = {
+                row["key"]: row for row in changed_manifest["targets"]
+            }
+            self.assertNotEqual(
+                first_digest,
+                changed_specs["cad-ci-runtime-reference:build"][
+                    "target_spec_digest"
+                ],
+            )
+
     def test_invalid_verification_configuration_fails_during_load(self):
         """Missing package or unsupported adapter never reaches runtime."""
 
