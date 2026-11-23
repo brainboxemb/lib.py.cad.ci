@@ -31,6 +31,18 @@ class CadBuilderError(RuntimeError):
     """Raised for invalid built-in batch configuration or execution."""
 
 
+def _host_identity() -> str:
+    """Return the numeric POSIX identity used for bind-mounted runtime output."""
+
+    getuid = getattr(os, "getuid", None)
+    getgid = getattr(os, "getgid", None)
+    if getuid is None or getgid is None:
+        raise CadBuilderError(
+            "built-in CAD runtime requires POSIX UID/GID for output ownership"
+        )
+    return f"{getuid()}:{getgid()}"
+
+
 def _required(env: Mapping[str, str], name: str) -> str:
     value = env.get(name, "").strip()
     if not value:
@@ -214,6 +226,10 @@ def run_batch(
             "run",
             "--rm",
             "--pull=never",
+            "--user",
+            _host_identity(),
+            "-e",
+            "HOME=/tmp",
             "-e",
             f"PYTHONPATH={pythonpath}",
             "-v",
