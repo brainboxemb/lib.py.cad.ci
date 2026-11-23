@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.18.1
+
+- fix the built-in CadQuery builder to honor the documented final-`model`
+  contract when geometry is exposed as a `cq.Assembly`;
+- export Assembly-style models through their supported model-owned
+  `export(..., exportType="STL")` path while retaining
+  `cadquery.exporters.export` for ordinary exporter-compatible values;
+- preserve the existing one shared reference runtime/container, per-model
+  result reporting and normal SCons dependency/cache semantics;
+- add conformance coverage proving Assembly export does not fall through to the
+  shape-oriented exporter.
+
 ## 0.18.0
 
 - preserve wildcard semantics in directory prefixes before trailing `/**`,
