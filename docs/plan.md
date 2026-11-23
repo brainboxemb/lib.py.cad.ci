@@ -6,41 +6,33 @@ This repository owns generic CAD-CI planning/execution, durable build-store and
 complete-scope state, Pages and generated-branch publication semantics.
 Tool/workflow repositories adapt these APIs; they do not reimplement them.
 
-## Released baseline
+## Release candidate baseline
 
-- `lib.py.cad.ci 0.13.0` @
-  `8f0516a484e3eac11758b498ca181d5e39ed1efe`;
-- `tool.cad.ci v0.29.0` consumes that exact release and external acceptance
-  in `tool.cad.ci.test` #141 is green for the existing black-box suite;
-- #141 exposed one remaining generic gap: the durable workflow cannot isolate
-  generated output on alternate branch names while exercising the real
-  publication lifecycle.
+- configurable durable output-branch behavior from #98 is merged on `main` at
+  `998f6ed6f414575a2eefdd4b967e6f2800a1735c`;
+- PR #99 library CI passed against the installed wheel;
+- the candidate preserves `build` / `gh-pages` defaults and allows alternate
+  generated refs such as `test-output/build` and
+  `test-output/gh-pages`;
+- `tool.cad.ci` #147 remains blocked until this exact library behavior is
+  released.
 
 ## Current work
 
-### #98 — configurable durable generated output branches
+### #100 — release 0.14.0
 
-**Now.** Preserve `build` and `gh-pages` as compatibility defaults, while
-allowing the durable library adapter to read/publish equivalent output on
-caller-selected generated branch names such as
-`test-output/build` and `test-output/gh-pages`.
+**Now.** Publish the merged #98 contract as exact `lib.py.cad.ci 0.14.0`.
+The normal main release workflow must create `v0.14.0` only from the exact
+main commit containing the VERSION/pyproject/changelog declaration.
 
-Execution order:
-
-1. define the branch-selection behavior in requirements/design;
-2. thread the selected build branch through state materialization and durable
-   build publication;
-3. thread the selected Pages branch through durable Pages publication;
-4. add regression coverage for defaults and non-default branch names;
-5. merge and release an exact library revision;
-6. let `tool.cad.ci` #147 expose that released behavior;
-7. finish live acceptance in `tool.cad.ci.test` #141 before Forge/CAD adopt it.
+After release, verify the tag target and let `tool.cad.ci` #147 consume only
+that exact released commit.
 
 ## Open issue assessment
 
 | Issue | Status | Next |
 | --- | --- | --- |
-| #98 Configurable durable generated output branch names | **now** | Define, implement, test, merge, then release. |
+| #100 Release 0.14.0 configurable durable output branches | **now** | Merge release declaration after CI; verify exact published release. |
 | #89 Align historical changelog with shared meta template and guidance | **later / docs-only** | Apply shared changelog presentation without changing released behavior. |
 
 ## Non-goals
@@ -48,6 +40,4 @@ Execution order:
 - no second scheduler/freshness engine;
 - no consumer/domain-specific Forge/CAD concepts;
 - no GitHub-specific workflow orchestration;
-- no tool-owned duplicate implementation of library state;
-- no single filesystem-style `output_root` that merges build-store and Pages
-  publication into one branch.
+- no tool-owned duplicate implementation of library state.
