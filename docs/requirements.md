@@ -1345,3 +1345,18 @@ The runtime contract must:
   silently falling back to root-owned output.
 
 This ownership rule is runtime plumbing only and changes no consumer YAML/API.
+
+## Recursive path patterns with wildcard prefixes
+
+Configured source/watch/input patterns use POSIX-normalized wildcard matching.
+
+For a pattern ending in `/**`:
+
+- the matched directory itself and every descendant are included;
+- wildcard syntax in the directory prefix remains active;
+- `models/*/*/*/scpf/**` matches
+  `models/components/hub75_panel/detailed/scpf/model.py`;
+- `*/scpf/**` may match a nested relative source tree;
+- literal `folder/**` keeps its existing folder-and-descendants behavior;
+- matching does not trigger another filesystem inventory or alter item
+  selection/fan-out semantics beyond honoring the configured pattern.
