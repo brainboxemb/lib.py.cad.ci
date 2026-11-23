@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.17.1
+
+- fix the built-in build123d runtime adapter to use the immutable reference
+  runtime's isolated `/opt/build123d/bin/python` interpreter;
+- batch all active build123d rows into one child engine process inside the
+  existing shared reference container rather than starting one process per
+  model;
+- keep CadQuery and reusable verification orchestration in the main runtime
+  Python, with verification running after successful isolated-engine exports;
+- include engine-interpreter metadata in the built-in catalog/runtime contract
+  and advance the internal reference batch contract to 3;
+- preserve public CAD-CI YAML/API shape, SCons ownership and one-container
+  runtime cardinality.
+
 ## 0.17.0
 
 - add first-class declarative reusable verification to built-in CAD builders while keeping verification semantics in `lib.py.cad.verification`;
