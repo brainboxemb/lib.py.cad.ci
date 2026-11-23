@@ -80,6 +80,15 @@ The referenced item:
 The publication block is declarative metadata only. It contains no executable
 command, Git branch name or GitHub-specific setting.
 
+Generated branch selection is a publication-adapter input, not repository
+configuration. Durable callers may select the generated build branch and the
+generated Pages branch independently. The compatibility defaults remain
+`build` and `gh-pages`. Alternate valid Git branch names, including names
+with path separators such as `test-output/build` and
+`test-output/gh-pages`, change only which remote refs are read and written;
+they do not change complete-scope names, manifest layout, Pages subtree layout
+or provenance semantics.
+
 For a materialized complete `main` or named scope, CAD-CI resolves the Pages
 site as:
 
@@ -419,10 +428,11 @@ decide whether a dependency should rebuild.
 
 Local candidate output mirrors source item paths.
 
-The durable generated `build` branch contains:
-- `main/`: complete accepted baseline;
-- optional caller-named complete scopes such as `dev/`;
-- `pr/<number>/`: sparse overlay containing only selected PR item paths.
+By default the durable generated build branch is `build`; a caller may select
+another generated build branch. Within the selected build branch:
+- `main/` is the complete accepted baseline;
+- optional caller-named complete scopes such as `dev/` are siblings;
+- `pr/<number>/` is a sparse overlay containing only selected PR item paths.
 
 Named complete scopes use the same validated item membership, replacement and
 deletion-reconciliation semantics as `main`. A named scope is one safe
@@ -471,9 +481,11 @@ policy or publication state machine.
 
 ## 13. Pages
 
-Stable Pages content lives at the root of `gh-pages`. PR previews live under
-`previews/pr-<number>/`. Consumers may additionally publish complete sites to
-safe named top-level subtrees.
+By default Pages content is published to `gh-pages`; a caller may select
+another generated Pages branch. Within the selected Pages branch, stable
+content lives at the root, PR previews live under `previews/pr-<number>/`,
+and consumers may additionally publish complete sites to safe named top-level
+subtrees.
 
 Updating one named subtree replaces only that subtree and preserves stable
 content, PR previews and every sibling named subtree. Updating stable Pages

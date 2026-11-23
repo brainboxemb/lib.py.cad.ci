@@ -90,6 +90,11 @@ repository.pages
 The existing `cad_ci.durable` module remains the only high-level complete-scope
 adapter. No second integration helper is introduced.
 
+Generated branch names enter at this adapter boundary. State materialization and
+build publication receive one selected build branch; Pages publication receives
+one selected Pages branch. Defaults remain `build` and `gh-pages`.
+Repository `cad-ci.yml` does not own these Git transport names.
+
 ```text
 generated build branch absent
   -> first main/named scope = complete full run
@@ -111,7 +116,8 @@ Stable Pages preserve names are derived from valid named complete scopes already
 present in the materialized generated build tree. Lane names therefore are not
 duplicated in root publication configuration or workflow inputs.
 
-Git fetch/push remains delegated to `cad_ci.git_publish`; GitHub workflow
+Git fetch/push remains delegated to `cad_ci.git_publish`; the durable adapter
+passes the selected branch names to those existing primitives. GitHub workflow
 orchestration stays outside the library API.
 
 ## Repository variables
@@ -524,10 +530,11 @@ These are generic CAD-CI semantics, so they live in `cad_ci.durable`.
 The module composes existing planner, build-store and Git publication APIs; it
 does not introduce another storage format, selector or publication engine.
 
-`tool.cad.ci` may expose this behavior through workflow helper arguments and
-GitHub output files, but must not read durable `build.json` directly or
-choose between `prepare-main`, `update-main`, `prepare-named` and
-`update-named` itself.
+`tool.cad.ci` may expose this behavior through workflow helper arguments,
+including selected generated build/Page branch names, and GitHub output files.
+It must not read durable `build.json` directly or choose between
+`prepare-main`, `update-main`, `prepare-named` and `update-named`
+itself.
 
 ## Named complete publication scopes
 
