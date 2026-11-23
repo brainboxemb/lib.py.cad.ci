@@ -84,6 +84,24 @@ behaviour, stop and update the contract/design first.
 
 Keep workflows orchestration-only. Put generic behaviour in this library.
 
+Package ownership must be visible in the filesystem. Keep the root package
+limited to the small core/public surface. Implementation belongs under the
+canonical owner packages:
+
+- `cad_ci/builders/` — reusable CAD builder catalog/batch/runtime behavior;
+- `cad_ci/repository/` — Git/path selection and planning;
+- `cad_ci/scons/` — SCons translation, driver and bundle mechanics;
+- `cad_ci/execution/` — process boundary, runner and timing;
+- `cad_ci/publication/` — build-store, durable, Pages and generated-ref publication.
+
+Do not add new owner implementation modules to the package root. Do not bypass
+the process adapter with direct `subprocess.run` calls in new owner logic.
+
+Shared cross-repository principles for runtime performance, development-cycle
+performance and agent manageability are documented in
+`brainboxemb/meta.cad.solidcraft/docs/engineering-principles.md`. Keep concrete
+library consequences here instead of copying the full shared text.
+
 All Python modules and non-obvious logic need concise explanatory
 docstrings/comments. Keep one logical change in one branch/PR.
 
