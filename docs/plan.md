@@ -18,10 +18,29 @@ do not reimplement them.
 
 ## Current work
 
+### #108 — harden library package foundation
+
+**Now / prerequisite for #106.**
+
+Before adding more builder behavior, make the library itself easier to navigate,
+package, test and modify safely.
+
+Required foundation:
+
+1. builder-owned code lives under `cad_ci/builders/`;
+2. external process execution crosses one thin `cad_ci/execution/` adapter;
+3. package discovery ships those subpackages in the wheel;
+4. `docs/manual/` contains copy-ready configuration templates;
+5. tests document the contract they protect and use owned fakes/adapters;
+6. performance remains a first-class invariant: one compatible N-model batch
+   means one runtime/container start, current/cache paths do not start the
+   runtime, and no second planner/cache/execution engine is introduced;
+7. the hierarchy must reduce architectural reconstruction work for future
+   maintainers/agents rather than add abstraction layers.
 
 ### #106 — extract reusable batched CAD builders from Forge
 
-**Implementation in progress.**
+**Blocked on #108.**
 
 Forge already proves the required execution shape: one normal CAD-CI/SCons
 graph, one shared producer, signature-safe active dependent context, one runtime
@@ -77,8 +96,21 @@ Execution order:
 
 | Issue | Status | Next |
 | --- | --- | --- |
-| #106 Extract reusable batched CAD builders from Forge | **implementation in progress** | Finish tests/PR, release owner stack, then migrate Forge #740. |
+| #108 Harden library package foundation before further CAD builder work | **now** | Establish ownership hierarchy, process boundary, packaging/manual/test contracts and performance invariants. |
+| #106 Extract reusable batched CAD builders from Forge | **blocked by #108** | Resume only after the library foundation PR is merged and green. |
 | #89 Align historical changelog | **later / docs-only** | Apply shared changelog presentation without runtime/API changes. |
+
+## Performance boundary
+
+Performance is part of the architecture, not a later optimization pass.
+
+- SCons remains the only rebuild/reuse engine;
+- compatible work is batched to amortize runtime startup;
+- no per-model Docker/process startup is acceptable;
+- cache/current results must avoid runtime startup entirely;
+- cleanup must not introduce repeated planning/repository scans;
+- deterministic structural assertions are preferred over fragile wall-clock
+  thresholds in normal CI.
 
 ## Boundary
 
