@@ -1110,5 +1110,148 @@ class ConfigTests(unittest.TestCase):
                 load_repository_config(repo)
 
 
+    def test_root_publication_pages_accepts_one_shot_builder(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp)
+            (repo / "cad-ci.yml").write_text(
+                "schema: 1\n"
+                "variables: {SITE_MODE: accepted}\n"
+                "builders: {pages-site: ci/builders/pages-site}\n"
+                "items: [dummy]\n"
+                "publication:\n"
+                "  pages: {builder: pages-site, output: site}\n",
+                encoding="utf-8",
+            )
+            dummy = repo / "dummy"
+            dummy.mkdir()
+            (dummy / "ci.yml").write_text(
+                "id: dummy\n"
+                "steps: [{id: test, run: [python, -c, 'print(1)']}]\n",
+                encoding="utf-8",
+            )
+            builder = repo / "ci" / "builders" / "pages-site"
+            builder.mkdir(parents=True)
+            (builder / "builder.yml").write_text(
+                "schema: 1\n"
+                "steps:\n"
+                "  - id: render\n"
+                "    run: [python, -c, 'print(1)']\n"
+                "    outputs: [site]\n",
+                encoding="utf-8",
+            )
+
+            repository = load_repository_config(repo)
+            pages = repository.pages
+            self.assertIsNotNone(pages)
+            self.assertIsNone(pages.item)
+            self.assertEqual(pages.builder, "pages-site")
+            self.assertEqual(pages.builder_path, Path("ci/builders/pages-site"))
+            self.assertEqual(pages.output, "site")
+            self.assertEqual(pages.builder_step.id, "render")
+            self.assertEqual(pages.builder_step.outputs, ("site",))
+            self.assertEqual(repository.variables, (("SITE_MODE", "accepted"),))
+
+    def test_root_publication_pages_requires_exactly_one_source(self):
+        cases = (
+            (
+                "pages: {item: dummy, builder: pages-site, output: site}",
+                "exactly one of item or builder",
+            ),
+            (
+                "pages: {output: site}",
+                "exactly one of item or builder",
+            ),
+        )
+        for pages, expected in cases:
+            with self.subTest(pages=pages):
+                with tempfile.TemporaryDirectory() as tmp:
+                    repo = Path(tmp)
+                    (repo / "cad-ci.yml").write_text(
+                        "schema: 1\n"
+                        "builders: {pages-site: ci/builders/pages-site}\n"
+                        "items: [dummy]\n"
+                        "publication:\n"
+                        f"  {pages}\n",
+                        encoding="utf-8",
+                    )
+                    dummy = repo / "dummy"
+                    dummy.mkdir()
+                    (dummy / "ci.yml").write_text(
+                        "id: dummy\n"
+                        "steps: [{id: test, run: [python, -c, 'print(1)']}]\n",
+                        encoding="utf-8",
+                    )
+                    with self.assertRaisesRegex(ConfigError, expected):
+                        load_repository_config(repo)
+
+    def test_root_publication_pages_rejects_invalid_builder_contract(self):
+        cases = (
+            (
+                "",
+                "unknown builder",
+                "pages: {builder: missing, output: site}",
+            ),
+            (
+                "steps:\n"
+                "  - {id: one, run: [python, -c, 'print(1)'], outputs: [site]}\n"
+                "  - {id: two, run: [python, -c, 'print(2)']}\n",
+                "exactly one command step",
+                "pages: {builder: pages-site, output: site}",
+            ),
+            (
+                "steps:\n"
+                "  - id: copy\n"
+                "    copy: {dependency: dummy, source: .}\n"
+                "    outputs: [site]\n",
+                "plain command step",
+                "pages: {builder: pages-site, output: site}",
+            ),
+            (
+                "steps:\n"
+                "  - {id: render, run: [python, -c, 'print(1)'], outputs: [other]}\n",
+                "output is not declared by builder",
+                "pages: {builder: pages-site, output: site}",
+            ),
+        )
+        for builder_body, expected, pages in cases:
+            with self.subTest(expected=expected):
+                with tempfile.TemporaryDirectory() as tmp:
+                    repo = Path(tmp)
+                    root = (
+                        "schema: 1\n"
+                        "items: [dummy]\n"
+                        "publication:\n"
+                        f"  {pages}\n"
+                    )
+                    if builder_body:
+                        root = (
+                            "schema: 1\n"
+                            "builders: {pages-site: ci/builders/pages-site}\n"
+                            "items: [dummy]\n"
+                            "publication:\n"
+                            f"  {pages}\n"
+                        )
+                    (repo / "cad-ci.yml").write_text(root, encoding="utf-8")
+                    dummy = repo / "dummy"
+                    dummy.mkdir()
+                    (dummy / "ci.yml").write_text(
+                        "id: dummy\n"
+                        "steps:\n"
+                        "  - id: test\n"
+                        "    run: [python, -c, 'print(1)']\n"
+                        "    outputs: [result.txt]\n",
+                        encoding="utf-8",
+                    )
+                    if builder_body:
+                        builder = repo / "ci" / "builders" / "pages-site"
+                        builder.mkdir(parents=True)
+                        (builder / "builder.yml").write_text(
+                            "schema: 1\n" + builder_body,
+                            encoding="utf-8",
+                        )
+                    with self.assertRaisesRegex(ConfigError, expected):
+                        load_repository_config(repo)
+
+
 if __name__ == "__main__":
     unittest.main()
