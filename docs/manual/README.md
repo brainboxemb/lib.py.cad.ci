@@ -22,6 +22,8 @@ ownership stay separate.
 | `templates/model-cadquery-ci.yml` | Item using the built-in CadQuery builder. |
 | `templates/model-repository-builder-ci.yml` | Item using a repository-owned builder alias. |
 | `templates/builder.yml` | Repository-owned builder implementation contract. |
+| `templates/cad-ci-verified-reference.yml` | Root profile for batched build123d/CadQuery mesh verification. |
+| `templates/model-verified-reference-ci.yml` | Minimal model item selecting that verified-reference profile. |
 
 See [configuration.md](configuration.md) for ownership and performance rules.
 

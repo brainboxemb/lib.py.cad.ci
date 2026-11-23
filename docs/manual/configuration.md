@@ -110,3 +110,64 @@ This library does not own GitHub Actions wrapper templates.
 Use the templates shipped by the exact released `tool.cad.ci` version for
 workflow setup. This prevents library configuration and workflow orchestration
 from becoming duplicated sources of truth.
+
+## Built-in build + verification profile
+
+Reusable verification does not require a repository-owned `verify` command.
+
+For a reference-model layout such as:
+
+```text
+models/
+  example/
+    build123d/
+      ci.yml
+      model.py
+    verification/
+      reference_geometry.json
+```
+
+start from `templates/cad-ci-verified-reference.yml`.
+
+The root profile pins the released verification library independently from the
+runtime image:
+
+```yaml
+verification:
+  package:
+    repository: brainboxemb/lib.py.cad.verification
+    version: "0.16.0"
+    commit: c7c145b7be0c602724e8cca874ef29990baaad1e
+```
+
+The item profile selects the generic builder and reusable verification adapter:
+
+```yaml
+templates:
+  verified-reference:
+    builder: build123d
+    verification:
+      adapter: mesh-geometry
+      definition: ../verification/reference_geometry.json
+```
+
+An individual model can then contain only:
+
+```yaml
+id: example-build123d
+template: verified-reference
+```
+
+A CadQuery model may use the same profile and override only
+`builder: cadquery`.
+
+CAD-CI materializes the pinned verification wheel once through the SCons graph,
+mounts it read-only into the existing shared `reference` runtime and runs
+geometry verification immediately after each model export. It does not install
+the wheel in the host environment or start a second CAD container for
+verification.
+
+The verification definition remains consumer-owned data. Its fields and
+semantics are owned by `lib.py.cad.verification`; do not reproduce them in
+CAD-CI templates or repository scripts.
+
