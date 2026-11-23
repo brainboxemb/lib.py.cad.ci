@@ -27,10 +27,10 @@ from .bundle import (
 from ..execution.timing import utc_now
 
 
-ENGINE_SCHEMA = 5
+ENGINE_SCHEMA = 6
 MANIFEST_SCHEMA = 1
 REPORT_SCHEMA = "cad-ci.scons-results"
-REPORT_SCHEMA_VERSION = 6
+REPORT_SCHEMA_VERSION = 7
 OUTCOMES = ("BUILT", "CACHE_RESTORED", "CURRENT", "ERROR")
 
 CACHE_ROOT = Path(".cache/cad-ci/scons/cache")
@@ -717,6 +717,12 @@ def write_report(
                 "active_dependents": list(
                     spec.get("active_dependents", [])
                 ),
+                "active_dependent_config_digests": dict(
+                    spec.get("signature", {}).get(
+                        "active_dependent_config_digests",
+                        {},
+                    )
+                ),
             }
         )
 
@@ -786,7 +792,7 @@ def write_public_evidence(
         _write_json(
             evidence,
             {
-                "schema": 5,
+                "schema": 6,
                 "engine": "scons",
                 "engine_schema": ENGINE_SCHEMA,
                 "item": row["item"],
@@ -808,6 +814,9 @@ def write_public_evidence(
                 "bundle_sha256": row["bundle_sha256"],
                 "outputs": row["outputs"],
                 "active_dependents": row["active_dependents"],
+                "active_dependent_config_digests": row[
+                    "active_dependent_config_digests"
+                ],
             },
         )
 
