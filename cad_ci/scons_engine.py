@@ -27,7 +27,7 @@ from .scons_bundle import (
 from .timing import utc_now
 
 
-ENGINE_SCHEMA = 4
+ENGINE_SCHEMA = 5
 MANIFEST_SCHEMA = 1
 REPORT_SCHEMA = "cad-ci.scons-results"
 REPORT_SCHEMA_VERSION = 6
@@ -400,6 +400,9 @@ def target_specs(
                     if item.builder_path is not None
                     else None
                 ),
+                "runtime": item.runtime_role,
+                "runtime_image": item.runtime_image,
+                "internal": item.internal,
                 "step_id": configured_step.id,
                 "action_type": action_type,
                 "run": command,
@@ -429,6 +432,9 @@ def target_specs(
                         if item.builder_path is not None
                         else None
                     ),
+                    "runtime": item.runtime_role,
+                    "runtime_image": item.runtime_image,
+                    "internal": item.internal,
                     "step_id": configured_step.id,
                     "action_type": action_type,
                     "run": command,

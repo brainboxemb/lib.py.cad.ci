@@ -57,6 +57,7 @@ class RepositoryConfig:
     items: dict[str, "Item"]
     pages: PagesPublication | None = None
     variables: tuple[tuple[str, str], ...] = ()
+    runtimes: tuple[tuple[str, str], ...] = ()
 
 
 @dataclass(frozen=True)
@@ -86,3 +87,6 @@ class Item:
     variables: tuple[tuple[str, str], ...] = ()
     builder: str | None = None
     builder_path: Path | None = None
+    runtime_role: str | None = None
+    runtime_image: str | None = None
+    internal: bool = False

@@ -18,6 +18,13 @@ from typing import Any
 
 import yaml
 
+from .builder_catalog import (
+    BUILTIN_BUILDERS,
+    projection_step,
+    runtime_batch_id,
+    runtime_batch_path,
+    runtime_batch_step,
+)
 from .model import DependencyCopy, Item, PagesPublication, RepositoryConfig, Step
 
 
@@ -29,6 +36,7 @@ _ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
 _ENV_NAME = re.compile(r"^[A-Z_][A-Z0-9_]*$")
 _RESERVED_ENV_PREFIXES = ("GITHUB_", "RUNNER_", "ACTIONS_", "CAD_CI_")
 _GENERATED_ROOTS = {".git", ".cache", "build"}
+_SHA256_IMAGE = re.compile(r"^.+@sha256:[0-9a-fA-F]{64}$")
 
 
 def _load_yaml(path: Path) -> dict[str, Any]:
@@ -134,6 +142,10 @@ def _builders(value: object, path: Path) -> dict[str, Path]:
     for name, raw_path in value.items():
         if not isinstance(name, str) or not _ID.fullmatch(name):
             raise ConfigError(f"invalid builder name: {path}: {name!r}")
+        if name in BUILTIN_BUILDERS:
+            raise ConfigError(
+                f"builder name is reserved by built-in catalog: {path}: {name}"
+            )
         if not isinstance(raw_path, str) or not raw_path:
             raise ConfigError(f"builder path must be a string: {path}: {name}")
 
@@ -149,6 +161,49 @@ def _builders(value: object, path: Path) -> dict[str, Path]:
                 f"builder path must stay inside source paths: {path}: {raw_path}"
             )
         result[name] = Path(parsed.as_posix())
+    return result
+
+
+def _runtime_image(value: object, path: Path, role: str) -> str:
+    """Validate one explicit non-latest runtime image reference."""
+
+    if not isinstance(value, str) or not value or any(ch.isspace() for ch in value):
+        raise ConfigError(f"runtime image must be a non-empty string: {path}: {role}")
+    if "@" in value:
+        if not _SHA256_IMAGE.fullmatch(value):
+            raise ConfigError(
+                f"runtime image digest must use sha256: {path}: {role}: {value}"
+            )
+        return value
+
+    leaf = value.rsplit("/", 1)[-1]
+    if ":" not in leaf:
+        raise ConfigError(
+            f"runtime image must use an explicit non-latest tag or digest: "
+            f"{path}: {role}: {value}"
+        )
+    tag = leaf.rsplit(":", 1)[1]
+    if not tag or tag.lower() == "latest":
+        raise ConfigError(
+            f"runtime image must use an explicit non-latest tag or digest: "
+            f"{path}: {role}: {value}"
+        )
+    return value
+
+
+def _runtimes(value: object, path: Path) -> dict[str, str]:
+    """Read generic runtime-role mappings used by built-in builders."""
+
+    if value is None:
+        return {}
+    if not isinstance(value, dict):
+        raise ConfigError(f"runtimes must be a mapping: {path}")
+
+    result: dict[str, str] = {}
+    for role, image in value.items():
+        if not isinstance(role, str) or not _ID.fullmatch(role):
+            raise ConfigError(f"invalid runtime role: {path}: {role!r}")
+        result[role] = _runtime_image(image, path, role)
     return result
 
 
@@ -667,6 +722,7 @@ def load_repository_config(repo: Path) -> RepositoryConfig:
         raise ConfigError(f"unsupported schema in {root_path}")
 
     variables = _variables(root.get("variables"), root_path)
+    runtimes = _runtimes(root.get("runtimes"), root_path)
     templates = _templates(root.get("templates"), root_path)
     builders = _builders(root.get("builders"), root_path)
     pages = _publication_pages(root.get("publication"), root_path)
@@ -712,6 +768,7 @@ def load_repository_config(repo: Path) -> RepositoryConfig:
                 item_paths.append(rel)
 
     items: dict[str, Item] = {}
+    builtin_users: dict[str, list[tuple[str, Path]]] = {}
     for rel in item_paths:
         item_dir = repo / rel
         config_path = item_dir / "ci.yml"
@@ -777,27 +834,64 @@ def load_repository_config(repo: Path) -> RepositoryConfig:
             )
 
         builder_path: Path | None = None
+        runtime_role: str | None = None
+        runtime_image: str | None = None
+        needs = _strings(data.get("needs"), "needs", config_path)
         if has_builder:
             if (
                 not isinstance(builder_name, str)
                 or not _ID.fullmatch(builder_name)
             ):
                 raise ConfigError(f"builder must be a valid name: {config_path}")
-            try:
-                builder_path = builders[builder_name]
-            except KeyError as exc:
-                raise ConfigError(
-                    f"unknown builder {builder_name!r}: {config_path}"
-                ) from exc
-            steps, _ = _builder_steps(
-                repo,
-                builder_name,
-                builder_path,
-                default_timeout,
-                rel,
-            )
-            builder_watch = f"{builder_path.as_posix()}/**"
-            watch = tuple(dict.fromkeys((*watch, builder_watch)))
+
+            if builder_name in BUILTIN_BUILDERS:
+                built_in = BUILTIN_BUILDERS[builder_name]
+                model_source = item_dir / "model.py"
+                if not model_source.is_file() or model_source.is_symlink():
+                    raise ConfigError(
+                        f"built-in {builder_name} requires regular item-local "
+                        f"model.py: {config_path}"
+                    )
+                runtime_role = built_in.runtime_role
+                try:
+                    runtime_image = runtimes[runtime_role]
+                except KeyError as exc:
+                    raise ConfigError(
+                        f"built-in {builder_name} requires runtime role "
+                        f"{runtime_role!r}: {root_path}"
+                    ) from exc
+
+                producer = runtime_batch_id(runtime_role)
+                needs = tuple(dict.fromkeys((*needs, producer)))
+                steps = (
+                    projection_step(
+                        builder_name,
+                        dependency=producer,
+                        item_path=rel,
+                    ),
+                )
+                watch = tuple(
+                    dict.fromkeys(
+                        (*watch, f"{rel.as_posix()}/model.py")
+                    )
+                )
+                builtin_users.setdefault(runtime_role, []).append((item_id, rel))
+            else:
+                try:
+                    builder_path = builders[builder_name]
+                except KeyError as exc:
+                    raise ConfigError(
+                        f"unknown builder {builder_name!r}: {config_path}"
+                    ) from exc
+                steps, _ = _builder_steps(
+                    repo,
+                    builder_name,
+                    builder_path,
+                    default_timeout,
+                    rel,
+                )
+                builder_watch = f"{builder_path.as_posix()}/**"
+                watch = tuple(dict.fromkeys((*watch, builder_watch)))
         else:
             steps = _configured_steps(
                 raw_steps,
@@ -811,7 +905,7 @@ def load_repository_config(repo: Path) -> RepositoryConfig:
             path=rel,
             kind=kind,
             process=process,
-            needs=_strings(data.get("needs"), "needs", config_path),
+            needs=needs,
             watch=watch,
             affected=affected,
             reuse=reuse,
@@ -821,6 +915,47 @@ def load_repository_config(repo: Path) -> RepositoryConfig:
             config_data=data,
             builder=builder_name if has_builder else None,
             builder_path=builder_path,
+            runtime_role=runtime_role,
+            runtime_image=runtime_image,
+        )
+
+    for role, users in builtin_users.items():
+        producer_id = runtime_batch_id(role)
+        if producer_id in items:
+            raise ConfigError(
+                f"built-in runtime item id conflicts with consumer item: {producer_id}"
+            )
+        runtime_image = runtimes[role]
+        producer_inputs = tuple(
+            path
+            for _, rel in users
+            for path in (
+                f"{rel.as_posix()}/ci.yml",
+                f"{rel.as_posix()}/model.py",
+            )
+        )
+        items[producer_id] = Item(
+            id=producer_id,
+            path=runtime_batch_path(role),
+            kind="cad-runtime",
+            process=True,
+            needs=(),
+            watch=(),
+            affected="direct",
+            reuse=True,
+            variables=variables,
+            steps=(
+                runtime_batch_step(
+                    role,
+                    inputs=producer_inputs,
+                    timeout_seconds=default_timeout,
+                ),
+            ),
+            config_path=root_path,
+            config_data={"internal": "built-in-runtime", "runtime": role},
+            runtime_role=role,
+            runtime_image=runtime_image,
+            internal=True,
         )
 
     for item in items.values():
@@ -888,6 +1023,10 @@ def load_repository_config(repo: Path) -> RepositoryConfig:
             raise ConfigError(
                 f"publication.pages item is not processed: {pages.item}"
             )
+        if pages_item.internal:
+            raise ConfigError(
+                f"publication.pages cannot reference internal item: {pages.item}"
+            )
         declared_outputs = {
             output
             for step in pages_item.steps
@@ -943,6 +1082,7 @@ def load_repository_config(repo: Path) -> RepositoryConfig:
         items=items,
         pages=pages,
         variables=variables,
+        runtimes=tuple(sorted(runtimes.items())),
     )
 
 

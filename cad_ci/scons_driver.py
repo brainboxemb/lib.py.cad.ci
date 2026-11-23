@@ -151,6 +151,8 @@ def _command_environment(
                 if spec.get("builder_path")
                 else ""
             ),
+            "CAD_CI_RUNTIME": str(spec.get("runtime") or ""),
+            "CAD_CI_RUNTIME_IMAGE": str(spec.get("runtime_image") or ""),
             "CAD_CI_OUTPUT": str(_output_root(spec).resolve()),
             "CAD_CI_DEPENDENCIES_JSON": json.dumps(
                 dependency_context,
@@ -333,7 +335,11 @@ def _execute_bundle(target, source, env) -> int:
     try:
         completed = subprocess.run(
             command,
-            cwd=ROOT / Path(spec["item_path"]),
+            cwd=(
+                ROOT
+                if spec.get("internal")
+                else ROOT / Path(spec["item_path"])
+            ),
             env=_command_environment(spec, dependency_context),
             shell=bool(spec["shell"]),
             check=False,
