@@ -54,6 +54,26 @@ def runtime_batch_path(role: str) -> Path:
     return Path(".cad-ci-runtime") / role
 
 
+def runtime_catalog_signature(role: str) -> str:
+    """Return stable engine-contract identity for one compatible runtime group."""
+
+    rows = sorted(
+        (
+            builder.name,
+            builder.contract,
+            builder.output,
+        )
+        for builder in BUILTIN_BUILDERS.values()
+        if builder.runtime_role == role
+    )
+    if not rows:
+        raise ValueError(f"unknown built-in runtime role: {role}")
+    return ",".join(
+        f"{name}:{contract}:{output}"
+        for name, contract, output in rows
+    )
+
+
 def runtime_batch_step(
     role: str,
     *,
@@ -66,6 +86,7 @@ def runtime_batch_step(
         contract = RUNTIME_BATCH_CONTRACTS[role]
     except KeyError as exc:
         raise ValueError(f"unknown built-in runtime role: {role}") from exc
+    catalog_signature = runtime_catalog_signature(role)
     return Step(
         id="build",
         run=(
@@ -77,6 +98,8 @@ def runtime_batch_step(
             role,
             "--contract",
             str(contract),
+            "--catalog",
+            catalog_signature,
         ),
         outputs=("items", "batch-manifest.json", "batch-report.json"),
         timeout_seconds=timeout_seconds,

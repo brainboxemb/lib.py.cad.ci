@@ -13,6 +13,7 @@ from typing import Mapping
 from .builder_catalog import (
     BUILTIN_BUILDERS,
     RUNTIME_BATCH_CONTRACTS,
+    runtime_catalog_signature,
 )
 
 
@@ -59,6 +60,7 @@ def _active_ids(env: Mapping[str, str]) -> tuple[str, ...]:
 def build_manifest(
     runtime: str,
     contract: int,
+    catalog: str,
     *,
     environ: Mapping[str, str] | None = None,
 ) -> tuple[Path, Path, str]:
@@ -71,6 +73,12 @@ def build_manifest(
     if contract != expected:
         raise CadBuilderError(
             f"unsupported {runtime} batch contract {contract}; expected {expected}"
+        )
+    expected_catalog = runtime_catalog_signature(runtime)
+    if catalog != expected_catalog:
+        raise CadBuilderError(
+            f"built-in catalog mismatch for {runtime}: "
+            f"{catalog!r} != {expected_catalog!r}"
         )
 
     from .config import load_repository
@@ -134,6 +142,7 @@ def build_manifest(
                 "schema": 1,
                 "runtime": runtime,
                 "batch_contract": contract,
+                "catalog": catalog,
                 "models": rows,
             },
             indent=2,
@@ -148,6 +157,7 @@ def build_manifest(
 def run_batch(
     runtime: str,
     contract: int,
+    catalog: str,
     *,
     environ: Mapping[str, str] | None = None,
 ) -> int:
@@ -157,6 +167,7 @@ def run_batch(
     manifest, report, image = build_manifest(
         runtime,
         contract,
+        catalog,
         environ=env,
     )
     repo = Path(_required(env, "CAD_CI_REPO")).resolve()
@@ -200,11 +211,12 @@ def main(argv: list[str] | None = None) -> int:
     batch = subparsers.add_parser("batch")
     batch.add_argument("--runtime", required=True)
     batch.add_argument("--contract", type=int, required=True)
+    batch.add_argument("--catalog", required=True)
     args = parser.parse_args(argv)
 
     try:
         if args.operation == "batch":
-            return run_batch(args.runtime, args.contract)
+            return run_batch(args.runtime, args.contract, args.catalog)
     except (CadBuilderError, OSError, subprocess.CalledProcessError) as exc:
         print(f"CAD CI built-in builder error: {exc}", file=sys.stderr)
         return 2

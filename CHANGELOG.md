@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.16.0
+
+- add built-in generic `build123d` and `cadquery` builders while keeping
+  normal model `ci.yml` declarative: models select only their builder and do
+  not repeat runtime, batch or dependency-copy implementation;
+- lower compatible built-in models to the already-proven shared-producer
+  pattern using `selection_context: direct_dependents` and the existing
+  signature-safe active-consumer context;
+- execute active build123d/CadQuery models together in one `reference`
+  runtime/container process and project each `model.stl` back through the
+  normal `copy: dependency` mechanism;
+- include runtime image, batch contract and exact built-in catalog contract in
+  target identity while retaining SCons as the only scheduling/freshness/cache
+  engine;
+- keep per-model batch status observable after individual failures and keep
+  Forge verification, geometry acceptance, preview and presentation policy out
+  of the generic library.
+
 ## 0.15.0
 
 - add a mutually exclusive `publication.pages.builder/output` mode for

@@ -926,9 +926,14 @@ def load_repository_config(repo: Path) -> RepositoryConfig:
                 f"built-in runtime item id conflicts with consumer item: {producer_id}"
             )
         runtime_image = runtimes[role]
+        processed_users = [
+            (item_id, rel)
+            for item_id, rel in users
+            if items[item_id].process
+        ]
         producer_inputs = tuple(
             path
-            for _, rel in users
+            for _, rel in processed_users
             for path in (
                 f"{rel.as_posix()}/ci.yml",
                 f"{rel.as_posix()}/model.py",
@@ -938,7 +943,7 @@ def load_repository_config(repo: Path) -> RepositoryConfig:
             id=producer_id,
             path=runtime_batch_path(role),
             kind="cad-runtime",
-            process=True,
+            process=bool(processed_users),
             needs=(),
             watch=(),
             affected="direct",

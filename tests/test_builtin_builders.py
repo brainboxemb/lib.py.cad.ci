@@ -11,6 +11,7 @@ import types
 import unittest
 from unittest.mock import patch
 
+from cad_ci.builder_catalog import runtime_catalog_signature
 from cad_ci.cad_builder import run_batch
 from cad_ci.cad_builder_runtime import execute_manifest
 from cad_ci.config import ConfigError, load_repository
@@ -142,6 +143,26 @@ class BuiltinBuilderConfigTests(unittest.TestCase):
             with self.assertRaisesRegex(ConfigError, "reserved"):
                 load_repository(root)
 
+    def test_all_disabled_builtin_models_disable_internal_producer(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            _write(
+                root / "cad-ci.yml",
+                "schema: 1\n"
+                "runtimes: {reference: ghcr.io/example/cad-reference:v1}\n"
+                "items: [a]\n",
+            )
+            _write(
+                root / "a" / "ci.yml",
+                "id: a\nprocess: false\nbuilder: build123d\n",
+            )
+            _write(root / "a" / "model.py", "model = object()\n")
+
+            items = load_repository(root)
+            producer = items["cad-ci-runtime-reference"]
+            self.assertFalse(producer.process)
+            self.assertEqual(producer.steps[0].inputs, ())
+
     def test_builtin_requires_runtime_and_model_source(self):
         cases = (
             (
@@ -212,7 +233,12 @@ class BuiltinBuilderBatchTests(unittest.TestCase):
 
             with patch("cad_ci.cad_builder.subprocess.run", side_effect=fake_run):
                 self.assertEqual(
-                    run_batch("reference", 1, environ=env),
+                    run_batch(
+                        "reference",
+                        1,
+                        runtime_catalog_signature("reference"),
+                        environ=env,
+                    ),
                     0,
                 )
 
