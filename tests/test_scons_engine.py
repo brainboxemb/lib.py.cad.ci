@@ -1495,7 +1495,7 @@ out = Path(os.environ["CAD_CI_OUTPUT"])
 dist = out / "dist"
 dist.mkdir(parents=True, exist_ok=True)
 (dist / "brainboxemb_cad_verification_lib-0.16.0-py3-none-any.whl").write_bytes(b"wheel")
-(out / "provenance.json").write_text("{}\n")
+(out / "provenance.json").write_text("{}\\n")
 """,
             )
 
