@@ -63,6 +63,17 @@ def _output_root(environ: dict[str, str] | os._Environ[str]) -> Path:
     return output
 
 
+def materialized_wheel(dist: Path) -> Path:
+    """Return the one exact verification wheel in a materialized dist output."""
+
+    wheels = tuple(sorted(Path(dist).glob(f"{_WHEEL_PREFIX}*.whl")))
+    if len(wheels) != 1:
+        raise VerificationPackageError(
+            f"expected one CAD verification wheel, found {len(wheels)}"
+        )
+    return wheels[0]
+
+
 def _wheel_version(path: Path) -> str:
     """Read the canonical Version field from one built wheel."""
 
@@ -124,12 +135,7 @@ def build_package(
         check=True,
     )
 
-    wheels = tuple(sorted(dist.glob(f"{_WHEEL_PREFIX}*.whl")))
-    if len(wheels) != 1:
-        raise VerificationPackageError(
-            f"expected one CAD verification wheel, found {len(wheels)}"
-        )
-    wheel = wheels[0]
+    wheel = materialized_wheel(dist)
     actual = _wheel_version(wheel)
     if actual != package.version:
         raise VerificationPackageError(
