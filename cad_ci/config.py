@@ -20,12 +20,26 @@ import yaml
 
 from .builders.catalog import (
     BUILTIN_BUILDERS,
-    projection_step,
+    projection_steps,
     runtime_batch_id,
     runtime_batch_path,
     runtime_batch_step,
 )
-from .model import DependencyCopy, Item, PagesPublication, RepositoryConfig, Step
+from .model import (
+    DependencyCopy,
+    Item,
+    PagesPublication,
+    RepositoryConfig,
+    Step,
+    VerificationConfig,
+    VerificationPackage,
+)
+from .verification.catalog import VERIFICATION_ADAPTERS
+from .verification.package import (
+    PACKAGE_ITEM_ID,
+    PACKAGE_ITEM_PATH,
+    package_step,
+)
 
 
 class ConfigError(ValueError):
@@ -37,6 +51,10 @@ _ENV_NAME = re.compile(r"^[A-Z_][A-Z0-9_]*$")
 _RESERVED_ENV_PREFIXES = ("GITHUB_", "RUNNER_", "ACTIONS_", "CAD_CI_")
 _GENERATED_ROOTS = {".git", ".cache", "build"}
 _SHA256_IMAGE = re.compile(r"^.+@sha256:[0-9a-fA-F]{64}$")
+_GITHUB_REPOSITORY = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
+_SEMVER = re.compile(r"^[0-9]+\.[0-9]+\.[0-9]+$")
+_COMMIT_SHA = re.compile(r"^[0-9a-f]{40}$")
+_VERIFICATION_ID = re.compile(r"^[a-z0-9][a-z0-9_-]*$")
 
 
 def _load_yaml(path: Path) -> dict[str, Any]:
@@ -205,6 +223,128 @@ def _runtimes(value: object, path: Path) -> dict[str, str]:
             raise ConfigError(f"invalid runtime role: {path}: {role!r}")
         result[role] = _runtime_image(image, path, role)
     return result
+
+
+def _verification_package(
+    value: object,
+    path: Path,
+) -> VerificationPackage | None:
+    """Read the exact released verification-library source pin."""
+
+    if value is None:
+        return None
+    if not isinstance(value, dict):
+        raise ConfigError(f"verification must be a mapping: {path}")
+    invalid = sorted(set(value) - {"package"})
+    if invalid:
+        raise ConfigError(
+            "verification contains unsupported field(s): "
+            + ", ".join(invalid)
+        )
+
+    package = value.get("package")
+    if not isinstance(package, dict):
+        raise ConfigError(f"verification.package must be a mapping: {path}")
+    invalid_package = sorted(
+        set(package) - {"repository", "version", "commit"}
+    )
+    if invalid_package:
+        raise ConfigError(
+            "verification.package contains unsupported field(s): "
+            + ", ".join(invalid_package)
+        )
+
+    repository = package.get("repository")
+    version = package.get("version")
+    commit = package.get("commit")
+    if (
+        not isinstance(repository, str)
+        or not _GITHUB_REPOSITORY.fullmatch(repository)
+    ):
+        raise ConfigError(
+            f"verification.package.repository must be owner/name: {path}"
+        )
+    if not isinstance(version, str) or not _SEMVER.fullmatch(version):
+        raise ConfigError(
+            f"verification.package.version must be SemVer X.Y.Z: {path}"
+        )
+    if not isinstance(commit, str) or not _COMMIT_SHA.fullmatch(commit):
+        raise ConfigError(
+            f"verification.package.commit must be a 40-character lowercase SHA: {path}"
+        )
+    return VerificationPackage(
+        repository=repository,
+        version=version,
+        commit=commit,
+    )
+
+
+def _item_verification(
+    value: object,
+    path: Path,
+    *,
+    repo: Path,
+    item_root: Path,
+    item_id: str,
+) -> VerificationConfig | None:
+    """Normalize one item/template verification request."""
+
+    if value is None:
+        return None
+    if not isinstance(value, dict):
+        raise ConfigError(f"item verification must be a mapping: {path}")
+    invalid = sorted(set(value) - {"adapter", "definition", "id"})
+    if invalid:
+        raise ConfigError(
+            "item verification contains unsupported field(s): "
+            + ", ".join(invalid)
+        )
+
+    adapter = value.get("adapter")
+    if not isinstance(adapter, str) or adapter not in VERIFICATION_ADAPTERS:
+        raise ConfigError(
+            f"verification.adapter must name a built-in adapter: {path}"
+        )
+
+    raw_definition = value.get("definition")
+    if not isinstance(raw_definition, str) or not raw_definition:
+        raise ConfigError(
+            f"verification.definition must be a non-empty string: {path}"
+        )
+    normalized = raw_definition.replace("\\", "/")
+    parsed = PurePosixPath(normalized)
+    if parsed.is_absolute() or any(char in normalized for char in "*?["):
+        raise ConfigError(
+            f"verification.definition must be one item-relative file: {path}"
+        )
+    definition = _item_source_pattern(
+        item_root,
+        parsed,
+        "verification.definition",
+        path,
+        raw_definition,
+    )
+    definition_path = repo / Path(definition)
+    if not definition_path.is_file() or definition_path.is_symlink():
+        raise ConfigError(
+            f"verification.definition must be a regular source file: {path}: {definition}"
+        )
+
+    verification_id = value.get("id", item_id)
+    if (
+        not isinstance(verification_id, str)
+        or not _VERIFICATION_ID.fullmatch(verification_id)
+    ):
+        raise ConfigError(
+            "verification.id must use lowercase letters, numbers, dash or "
+            f"underscore: {path}"
+        )
+
+    return VerificationConfig(
+        adapter=adapter,
+        definition=definition,
+        verification_id=verification_id,
+    )
 
 
 def _publication_pages(value: object, path: Path) -> PagesPublication | None:
@@ -723,6 +863,10 @@ def load_repository_config(repo: Path) -> RepositoryConfig:
 
     variables = _variables(root.get("variables"), root_path)
     runtimes = _runtimes(root.get("runtimes"), root_path)
+    verification_package = _verification_package(
+        root.get("verification"),
+        root_path,
+    )
     templates = _templates(root.get("templates"), root_path)
     builders = _builders(root.get("builders"), root_path)
     pages = _publication_pages(root.get("publication"), root_path)
@@ -833,6 +977,18 @@ def load_repository_config(repo: Path) -> RepositoryConfig:
                 f"item requires exactly one of builder or steps: {config_path}"
             )
 
+        verification = _item_verification(
+            data.get("verification"),
+            config_path,
+            repo=repo,
+            item_root=rel,
+            item_id=item_id,
+        )
+        if verification is not None and verification_package is None:
+            raise ConfigError(
+                f"item verification requires root verification.package: {config_path}"
+            )
+
         builder_path: Path | None = None
         runtime_role: str | None = None
         runtime_image: str | None = None
@@ -861,22 +1017,34 @@ def load_repository_config(repo: Path) -> RepositoryConfig:
                         f"{runtime_role!r}: {root_path}"
                     ) from exc
 
+                if verification is not None:
+                    adapter = VERIFICATION_ADAPTERS[verification.adapter]
+                    if adapter.runtime_role != runtime_role:
+                        raise ConfigError(
+                            f"verification adapter {verification.adapter!r} requires "
+                            f"runtime role {adapter.runtime_role!r}, not "
+                            f"{runtime_role!r}: {config_path}"
+                        )
+
                 producer = runtime_batch_id(runtime_role)
                 needs = tuple(dict.fromkeys((*needs, producer)))
-                steps = (
-                    projection_step(
-                        builder_name,
-                        dependency=producer,
-                        item_path=rel,
-                    ),
+                steps = projection_steps(
+                    builder_name,
+                    dependency=producer,
+                    item_path=rel,
+                    verification=verification is not None,
                 )
-                watch = tuple(
-                    dict.fromkeys(
-                        (*watch, f"{rel.as_posix()}/model.py")
-                    )
-                )
+                extra_watch = [f"{rel.as_posix()}/model.py"]
+                if verification is not None:
+                    extra_watch.append(verification.definition)
+                watch = tuple(dict.fromkeys((*watch, *extra_watch)))
                 builtin_users.setdefault(runtime_role, []).append((item_id, rel))
             else:
+                if verification is not None:
+                    raise ConfigError(
+                        "verification currently requires a built-in CAD builder: "
+                        f"{config_path}"
+                    )
                 try:
                     builder_path = builders[builder_name]
                 except KeyError as exc:
@@ -893,6 +1061,11 @@ def load_repository_config(repo: Path) -> RepositoryConfig:
                 builder_watch = f"{builder_path.as_posix()}/**"
                 watch = tuple(dict.fromkeys((*watch, builder_watch)))
         else:
+            if verification is not None:
+                raise ConfigError(
+                    "verification currently requires a built-in CAD builder: "
+                    f"{config_path}"
+                )
             steps = _configured_steps(
                 raw_steps,
                 config_path,
@@ -917,6 +1090,47 @@ def load_repository_config(repo: Path) -> RepositoryConfig:
             builder_path=builder_path,
             runtime_role=runtime_role,
             runtime_image=runtime_image,
+            verification=verification,
+        )
+
+    verification_items = [
+        item
+        for item in items.values()
+        if item.verification is not None
+    ]
+    if verification_items:
+        assert verification_package is not None
+        if PACKAGE_ITEM_ID in items:
+            raise ConfigError(
+                f"verification package item id conflicts with consumer item: {PACKAGE_ITEM_ID}"
+            )
+        processed_verification = any(
+            item.process for item in verification_items
+        )
+        items[PACKAGE_ITEM_ID] = Item(
+            id=PACKAGE_ITEM_ID,
+            path=PACKAGE_ITEM_PATH,
+            kind="cad-verification-package",
+            process=processed_verification,
+            needs=(),
+            watch=(),
+            affected="direct",
+            reuse=True,
+            variables=variables,
+            steps=(
+                package_step(
+                    verification_package,
+                    timeout_seconds=default_timeout,
+                ),
+            ),
+            config_path=root_path,
+            config_data={
+                "internal": "verification-package",
+                "repository": verification_package.repository,
+                "version": verification_package.version,
+                "commit": verification_package.commit,
+            },
+            internal=True,
         )
 
     for role, users in builtin_users.items():
@@ -931,20 +1145,31 @@ def load_repository_config(repo: Path) -> RepositoryConfig:
             for item_id, rel in users
             if items[item_id].process
         ]
-        producer_inputs = tuple(
-            path
-            for _, rel in processed_users
-            for path in (
-                f"{rel.as_posix()}/ci.yml",
-                f"{rel.as_posix()}/model.py",
+        producer_input_rows: list[str] = []
+        verified_processed = []
+        for item_id, rel in processed_users:
+            producer_input_rows.extend(
+                (
+                    f"{rel.as_posix()}/ci.yml",
+                    f"{rel.as_posix()}/model.py",
+                )
             )
+            verification = items[item_id].verification
+            if verification is not None:
+                verified_processed.append(item_id)
+                producer_input_rows.append(verification.definition)
+        producer_inputs = tuple(dict.fromkeys(producer_input_rows))
+        producer_needs = (
+            (PACKAGE_ITEM_ID,)
+            if verified_processed
+            else ()
         )
         items[producer_id] = Item(
             id=producer_id,
             path=runtime_batch_path(role),
             kind="cad-runtime",
             process=bool(processed_users),
-            needs=(),
+            needs=producer_needs,
             watch=(),
             affected="direct",
             reuse=True,
@@ -1088,6 +1313,7 @@ def load_repository_config(repo: Path) -> RepositoryConfig:
         pages=pages,
         variables=variables,
         runtimes=tuple(sorted(runtimes.items())),
+        verification_package=verification_package,
     )
 
 
