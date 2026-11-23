@@ -942,7 +942,7 @@ def load_repository_config(repo: Path) -> RepositoryConfig:
     return RepositoryConfig(
         items=items,
         pages=pages,
-        variables=tuple(sorted(variables.items())),
+        variables=variables,
     )
 
 
